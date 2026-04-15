@@ -1,0 +1,46 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# local sqlite db
+/data/*.db
+/data/*.db-journal
+
+# Python venv (any path, Windows-friendly)
+**/attendance_system/Lib/
+**/attendance_system/Scripts/
+**/attendance_system/Include/
+**/attendance_system/pyvenv.cfg
+**/__pycache__/
+*.py[cod]
+
+# Runtime face images for Python tool (regenerated from app; optional to track)
+Facial Attendance System/images/
+
+# Python tool runtime outputs (regenerated / session data)
+Facial Attendance System/attendance/*.csv
+Facial Attendance System/face_encodings.pkl
