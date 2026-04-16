@@ -378,15 +378,6 @@ export function StudentFacialScanner() {
 
         {!cameraActive ? (
           <div className="space-y-4">
-            <p className="text-sm text-foreground/60 leading-relaxed">
-              Use your camera to verify that{" "}
-              <span className="font-medium text-foreground">your face matches the uploaded student dataset</span>{" "}
-              (the face template created when your photo was saved in Admin → Student Dataset). This page loads those
-              templates from the app database and compares them to your live face—so it confirms you are enrolled in that
-              dataset, not random pictures on disk. When photos are uploaded, a copy may also be written to the{" "}
-              <code className="text-xs bg-muted px-1 rounded">Facial Attendance System/images</code> folder for optional
-              Python/desktop attendance tools; the browser check-in still uses the database embeddings.
-            </p>
             <p className="text-sm text-foreground/80">
               <span className="font-medium text-foreground">How it works:</span> Start camera → live preview appears →
               tap <span className="font-medium">Scan Face</span> → you will see whether you match your record in the

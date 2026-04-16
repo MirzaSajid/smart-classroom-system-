@@ -159,8 +159,7 @@ export function TeacherPortal() {
               </div>
             </div>
           </Card>
-
-          {sessionStartTime && selectedClass ? (
+        {sessionStartTime && selectedClass ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3 flex-col sm:flex-row">
                 <div className="text-sm text-foreground/60">

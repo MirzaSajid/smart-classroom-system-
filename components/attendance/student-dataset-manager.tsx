@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Upload, Trash2, Users, Download, AlertCircle, Edit2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { Upload, Trash2, Users, Download, AlertCircle, Edit2, Check, ChevronsUpDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '@/components/ui/command'
 import { loadFaceApiModelWeights, loadImageFromUrl } from '@/lib/face-api-models'
+import { cn } from '@/lib/utils'
 
 interface StudentData {
   studentId: string
@@ -25,6 +28,40 @@ interface AvailableStudent {
   rollNumber?: string | null
   email?: string | null
   parentContact?: string | null
+}
+
+const normalizeSearchValue = (value: unknown) => String(value ?? "").trim().toLowerCase()
+
+const normalizeAvailableStudent = (student: any): AvailableStudent => ({
+  id: String(student?.id ?? student?.studentId ?? "").trim(),
+  name: String(student?.name ?? student?.studentName ?? "").trim(),
+  rollNumber:
+    student?.rollNumber !== undefined && student?.rollNumber !== null ? String(student.rollNumber).trim() : null,
+  email: student?.email !== undefined && student?.email !== null ? String(student.email).trim() : null,
+  parentContact:
+    student?.parentContact !== undefined && student?.parentContact !== null ? String(student.parentContact).trim() : null,
+})
+
+const mergeAvailableStudents = (...studentLists: AvailableStudent[][]) => {
+  const merged = new Map<string, AvailableStudent>()
+
+  for (const list of studentLists) {
+    for (const rawStudent of list) {
+      const student = normalizeAvailableStudent(rawStudent)
+      if (!student.id || !student.name) continue
+
+      const existing = merged.get(student.id)
+      merged.set(student.id, {
+        id: student.id,
+        name: student.name || existing?.name || "",
+        rollNumber: student.rollNumber ?? existing?.rollNumber ?? null,
+        email: student.email ?? existing?.email ?? null,
+        parentContact: student.parentContact ?? existing?.parentContact ?? null,
+      })
+    }
+  }
+
+  return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function StudentDatasetManager() {
@@ -57,6 +94,7 @@ export function StudentDatasetManager() {
   })
   const [studentSearch, setStudentSearch] = useState("")
   const [selectedStudentOption, setSelectedStudentOption] = useState("")
+  const [studentPickerOpen, setStudentPickerOpen] = useState(false)
 
   // Load face-api models once
   useEffect(() => {
@@ -108,14 +146,29 @@ export function StudentDatasetManager() {
         const fetchStudents = async () => {
           const res = await fetch("/api/students")
           const json = (await res.json()) as { ok: boolean; data?: AvailableStudent[] }
-          if (res.ok && json.ok && Array.isArray(json.data)) return json.data
+          if (res.ok && json.ok && Array.isArray(json.data)) {
+            return json.data.map(normalizeAvailableStudent).filter((student) => student.id && student.name)
+          }
           return []
         }
 
+        const getLocalStudents = () => {
+          try {
+            const adminDataRaw = localStorage.getItem("adminData")
+            if (!adminDataRaw) return []
+            const adminData = JSON.parse(adminDataRaw) as { students?: unknown[] }
+            if (!Array.isArray(adminData.students)) return []
+            return adminData.students.map(normalizeAvailableStudent).filter((student) => student.id && student.name)
+          } catch {
+            return []
+          }
+        }
+
         let studentsFromDb = await fetchStudents()
+        const localStudents = getLocalStudents()
 
         // Backfill DB from legacy browser storage once, so dropdown works after resets.
-        if (studentsFromDb.length === 0) {
+        if (localStudents.length > 0 && studentsFromDb.length < localStudents.length) {
           try {
             const adminDataRaw = localStorage.getItem("adminData")
             if (adminDataRaw) {
@@ -140,7 +193,7 @@ export function StudentDatasetManager() {
           }
         }
 
-        setAvailableStudents(studentsFromDb)
+        setAvailableStudents(mergeAvailableStudents(studentsFromDb, localStudents))
       } catch {
         // ignore
       }
@@ -337,7 +390,7 @@ export function StudentDatasetManager() {
 
   const onPickStudent = (studentId: string) => {
     setSelectedStudentOption(studentId)
-    const selected = availableStudents.find((s) => s.id === studentId)
+    const selected = availableStudents.find((s) => String(s.id) === String(studentId))
     if (!selected) return
 
     setForm({
@@ -349,17 +402,23 @@ export function StudentDatasetManager() {
     })
   }
 
-  const filteredStudents = availableStudents.filter((s) => {
-    const q = studentSearch.trim().toLowerCase()
-    if (!q) return true
-    return (
-      s.name.toLowerCase().includes(q) ||
-      s.id.toLowerCase().includes(q) ||
-      String(s.rollNumber ?? "")
-        .toLowerCase()
-        .includes(q)
-    )
-  })
+  const filteredStudents = useMemo(() => {
+    const q = normalizeSearchValue(studentSearch)
+    if (!q) return availableStudents
+
+    return availableStudents.filter((s) => {
+      return (
+        normalizeSearchValue(s.name).includes(q) ||
+        normalizeSearchValue(s.id).includes(q) ||
+        normalizeSearchValue(s.rollNumber).includes(q)
+      )
+    })
+  }, [availableStudents, studentSearch])
+
+  const selectedStudent = useMemo(
+    () => availableStudents.find((student) => student.id === selectedStudentOption) ?? null,
+    [availableStudents, selectedStudentOption],
+  )
 
   const removeStudent = (studentId: string) => {
     const remove = async () => {
@@ -565,20 +624,76 @@ export function StudentDatasetManager() {
               <Input
                 placeholder="Search student by name, ID, or registration no"
                 value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
+                onChange={(e) => {
+                  setStudentSearch(e.target.value)
+                  if (!studentPickerOpen) setStudentPickerOpen(true)
+                }}
+                onFocus={() => {
+                  if (availableStudents.length > 0) setStudentPickerOpen(true)
+                }}
               />
-              <select
-                value={selectedStudentOption}
-                onChange={(e) => onPickStudent(e.target.value)}
-                className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-              >
-                <option value="">Select student from list</option>
-                {filteredStudents.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} | ID: {s.id} | Reg: {s.rollNumber ?? "N/A"}
-                  </option>
-                ))}
-              </select>
+              <Popover open={studentPickerOpen} onOpenChange={setStudentPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={studentPickerOpen}
+                    className="h-10 w-full justify-between border-border bg-background px-3 font-normal shadow-sm hover:bg-accent/40"
+                  >
+                    <span className="truncate text-left">
+                      {selectedStudent
+                        ? `${selectedStudent.name} • ${selectedStudent.id}`
+                        : "Select student from list"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-[320px] p-0" align="start">
+                  <Command className="rounded-md">
+                    <div className="border-b px-3 py-2">
+                      <p className="text-sm font-medium text-foreground">Choose a student</p>
+                      <p className="text-xs text-foreground/60">
+                        {filteredStudents.length} result{filteredStudents.length === 1 ? "" : "s"} shown
+                      </p>
+                    </div>
+                    <CommandList className="max-h-72">
+                      <CommandEmpty>No student matches your search.</CommandEmpty>
+                      <CommandGroup>
+                        {filteredStudents.map((s) => (
+                          <CommandItem
+                            key={s.id}
+                            value={`${s.name} ${s.id} ${s.rollNumber ?? ""}`}
+                            onSelect={() => {
+                              onPickStudent(s.id)
+                              setStudentPickerOpen(false)
+                            }}
+                            className="items-start gap-3 rounded-none border-b border-border/50 px-3 py-3 last:border-b-0"
+                          >
+                            <div
+                              className={cn(
+                                "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                                selectedStudentOption === s.id
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-background text-transparent",
+                              )}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium text-foreground">{s.name}</div>
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-foreground/60">
+                                <span>ID: {s.id}</span>
+                                <span>Reg: {s.rollNumber ?? "N/A"}</span>
+                              </div>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             {availableStudents.length === 0 ? (
               <p className="text-xs text-foreground/60">
