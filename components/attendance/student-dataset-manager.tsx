@@ -19,8 +19,17 @@ interface StudentData {
   embedding?: number[]
 }
 
+interface AvailableStudent {
+  id: string
+  name: string
+  rollNumber?: string | null
+  email?: string | null
+  parentContact?: string | null
+}
+
 export function StudentDatasetManager() {
   const [students, setStudents] = useState<StudentData[]>([])
+  const [availableStudents, setAvailableStudents] = useState<AvailableStudent[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<string>('')
   const [modelsReady, setModelsReady] = useState(false)
@@ -46,6 +55,8 @@ export function StudentDatasetManager() {
     email: "",
     parentContact: "",
   })
+  const [studentSearch, setStudentSearch] = useState("")
+  const [selectedStudentOption, setSelectedStudentOption] = useState("")
 
   // Load face-api models once
   useEffect(() => {
@@ -89,6 +100,52 @@ export function StudentDatasetManager() {
       }
     }
     loadDb()
+  }, [])
+
+  useEffect(() => {
+    const loadStudents = async () => {
+      try {
+        const fetchStudents = async () => {
+          const res = await fetch("/api/students")
+          const json = (await res.json()) as { ok: boolean; data?: AvailableStudent[] }
+          if (res.ok && json.ok && Array.isArray(json.data)) return json.data
+          return []
+        }
+
+        let studentsFromDb = await fetchStudents()
+
+        // Backfill DB from legacy browser storage once, so dropdown works after resets.
+        if (studentsFromDb.length === 0) {
+          try {
+            const adminDataRaw = localStorage.getItem("adminData")
+            if (adminDataRaw) {
+              const adminData = JSON.parse(adminDataRaw)
+              const importRes = await fetch("/api/db/import-localstorage", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  adminData,
+                  camerasData: [],
+                  attendanceRecords: [],
+                  studentDataset: [],
+                }),
+              })
+              const importJson = (await importRes.json().catch(() => null)) as { ok?: boolean } | null
+              if (importRes.ok && importJson?.ok) {
+                studentsFromDb = await fetchStudents()
+              }
+            }
+          } catch {
+            // ignore import fallback failures
+          }
+        }
+
+        setAvailableStudents(studentsFromDb)
+      } catch {
+        // ignore
+      }
+    }
+    loadStudents()
   }, [])
 
   useEffect(() => {
@@ -210,8 +267,8 @@ export function StudentDatasetManager() {
     const email = form.email.trim()
     const parentContact = form.parentContact.trim()
 
-    if (!studentId || !studentName || !rollNumber || !email || !parentContact) {
-      setUploadStatus("Please fill Student ID, Student Name, Registration Number, Email, and Cell Number.")
+    if (!studentId || !studentName) {
+      setUploadStatus("Please select a student from the dropdown first.")
       return
     }
     if (!modelsReady || !faceapiRef.current) {
@@ -277,6 +334,32 @@ export function StudentDatasetManager() {
       setIsUploading(false)
     }
   }
+
+  const onPickStudent = (studentId: string) => {
+    setSelectedStudentOption(studentId)
+    const selected = availableStudents.find((s) => s.id === studentId)
+    if (!selected) return
+
+    setForm({
+      studentId: selected.id,
+      studentName: selected.name,
+      rollNumber: selected.rollNumber ?? "",
+      email: selected.email ?? "",
+      parentContact: selected.parentContact ?? "",
+    })
+  }
+
+  const filteredStudents = availableStudents.filter((s) => {
+    const q = studentSearch.trim().toLowerCase()
+    if (!q) return true
+    return (
+      s.name.toLowerCase().includes(q) ||
+      s.id.toLowerCase().includes(q) ||
+      String(s.rollNumber ?? "")
+        .toLowerCase()
+        .includes(q)
+    )
+  })
 
   const removeStudent = (studentId: string) => {
     const remove = async () => {
@@ -478,36 +561,37 @@ export function StudentDatasetManager() {
           {/* Add Single Student */}
           <div className="rounded-lg border border-border p-4 bg-card/50 space-y-3">
             <h4 className="font-medium text-foreground">Add Student (recommended)</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Input
-                placeholder="Student ID"
-                value={form.studentId}
-                onChange={(e) => setForm((p) => ({ ...p, studentId: e.target.value }))}
-              />
-              <Input
-                placeholder="Student Name"
-                value={form.studentName}
-                onChange={(e) => setForm((p) => ({ ...p, studentName: e.target.value }))}
-              />
-              <Input
-                placeholder="Student Registration Number"
-                value={form.rollNumber}
-                onChange={(e) => setForm((p) => ({ ...p, rollNumber: e.target.value }))}
-              />
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input
-                placeholder="Student Email"
-                value={form.email}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                placeholder="Search student by name, ID, or registration no"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
               />
-              <Input
-                placeholder="Student Cell Number"
-                value={form.parentContact}
-                onChange={(e) => setForm((p) => ({ ...p, parentContact: e.target.value }))}
-              />
+              <select
+                value={selectedStudentOption}
+                onChange={(e) => onPickStudent(e.target.value)}
+                className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="">Select student from list</option>
+                {filteredStudents.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} | ID: {s.id} | Reg: {s.rollNumber ?? "N/A"}
+                  </option>
+                ))}
+              </select>
             </div>
+            {availableStudents.length === 0 ? (
+              <p className="text-xs text-foreground/60">
+                No students found in database. Add/import students first, then select from dropdown.
+              </p>
+            ) : null}
+            {form.studentId ? (
+              <div className="rounded-md border border-border bg-background/60 p-3 text-sm">
+                <div className="font-medium text-foreground">{form.studentName}</div>
+                <div className="text-foreground/70">ID: {form.studentId}</div>
+                <div className="text-foreground/70">Reg No: {form.rollNumber || "N/A"}</div>
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
               <div className="w-full space-y-2">
                 <input

@@ -30,7 +30,8 @@ export function StudentFacialScanner() {
   const [modelsReady, setModelsReady] = useState(false)
   const faceapiRef = useRef<null | typeof import("@vladmandic/face-api")>(null)
 
-  const MATCH_THRESHOLD = 0.7
+  const FACE_DISTANCE_THRESHOLD = 0.62
+  const FACE_AMBIGUITY_MARGIN = 0.02
 
   useEffect(() => {
     // Get current logged-in student
@@ -161,24 +162,14 @@ export function StudentFacialScanner() {
     setScanning(false)
   }
 
-  // Simple embedding distance calculation (cosine similarity)
-  const calculateSimilarity = (embed1: number[], embed2: number[]): number => {
-    if (!embed1 || !embed2 || embed1.length !== embed2.length) return 0
-
-    let dotProduct = 0
-    let norm1 = 0
-    let norm2 = 0
-
+  const euclideanDistance = (embed1: number[], embed2: number[]): number => {
+    if (!embed1 || !embed2 || embed1.length !== embed2.length) return Number.POSITIVE_INFINITY
+    let sum = 0
     for (let i = 0; i < embed1.length; i++) {
-      dotProduct += embed1[i] * embed2[i]
-      norm1 += embed1[i] * embed1[i]
-      norm2 += embed2[i] * embed2[i]
+      const d = embed1[i] - embed2[i]
+      sum += d * d
     }
-
-    const magnitude = Math.sqrt(norm1) * Math.sqrt(norm2)
-    if (magnitude === 0) return 0
-
-    return (dotProduct / magnitude + 1) / 2 // Normalize to 0-1 range
+    return Math.sqrt(sum)
   }
 
   const scanFace = async () => {
@@ -245,44 +236,48 @@ export function StudentFacialScanner() {
 
       const capturedEmbedding = Array.from(detection.descriptor)
 
-      // Find best similarity against dataset
-      let bestMatch: any = null
-      let bestSimilarity = 0
+      // Find nearest match by strict face distance and reject ambiguous faces.
+      const candidates: Array<{ student: any; distance: number; confidence: number }> = []
       for (const student of studentDataset) {
         if (!student.embedding) continue
-        const similarity = calculateSimilarity(capturedEmbedding, student.embedding)
-        if (similarity > bestSimilarity) {
-          bestSimilarity = similarity
-          bestMatch = student
-        }
+        const distance = euclideanDistance(capturedEmbedding, student.embedding)
+        const confidence = Math.max(0, Math.min(1, 1 - distance / FACE_DISTANCE_THRESHOLD))
+        candidates.push({ student, distance, confidence })
       }
+      candidates.sort((a, b) => a.distance - b.distance)
+      const best = candidates[0]
+      const second = candidates[1]
 
-      console.log('[v0] Match:', bestMatch?.studentName, 'Confidence:', bestSimilarity)
+      console.log('[v0] Match:', best?.student?.studentName, 'Distance:', best?.distance, 'Confidence:', best?.confidence)
 
-      if (bestMatch && bestSimilarity >= MATCH_THRESHOLD) {
-        if (String(bestMatch.studentId) !== String(currentUserId)) {
+      const withinDistance = !!best && best.distance <= FACE_DISTANCE_THRESHOLD
+      const clearlyBest = !second || (second.distance - (best?.distance ?? 0)) >= FACE_AMBIGUITY_MARGIN
+      const isMatch = Boolean(best && withinDistance && clearlyBest)
+
+      if (isMatch && best) {
+        if (String(best.student.studentId) !== String(currentUserId)) {
           setScanResult({
             matched: false,
-            confidence: Math.round(bestSimilarity * 100),
-            message: `This face matches the dataset record for ${bestMatch.studentName}, not your logged-in account. Check-in only works when your face matches your own uploaded dataset entry.`,
+            confidence: Math.round(best.confidence * 100),
+            message: `This face matches the dataset record for ${best.student.studentName}, not your logged-in account. Check-in only works when your face matches your own uploaded dataset entry.`,
           })
           return
         }
         const result: ScanResult = {
           matched: true,
-          studentId: bestMatch.studentId,
-          studentName: bestMatch.studentName,
-          confidence: Math.round(bestSimilarity * 100),
-          message: `Face recognized! Welcome ${bestMatch.studentName}`,
+          studentId: best.student.studentId,
+          studentName: best.student.studentName,
+          confidence: Math.round(best.confidence * 100),
+          message: `Face recognized! Welcome ${best.student.studentName}`,
         }
         setScanResult(result)
-        markAttendanceFromScan(bestMatch.studentId, bestMatch.studentName, bestSimilarity)
+        markAttendanceFromScan(best.student.studentId, best.student.studentName, best.confidence)
       } else {
         const result: ScanResult = {
           matched: false,
-          confidence: bestSimilarity ? Math.round(bestSimilarity * 100) : 0,
+          confidence: best ? Math.round(best.confidence * 100) : 0,
           message:
-            "Your face is not close enough to your entry in the uploaded dataset. Ask an admin to confirm your photo is saved in Student Dataset Manager (same data used for attendance).",
+            "Unknown face. Your face does not confidently match the uploaded dataset. Please re-capture your dataset image with a clear, front-facing photo.",
         }
         setScanResult(result)
       }

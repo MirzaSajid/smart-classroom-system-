@@ -14,6 +14,9 @@ interface MatchResult {
   timestamp: string
 }
 
+const FACE_DISTANCE_THRESHOLD = 0.62
+const FACE_AMBIGUITY_MARGIN = 0.02
+
 export async function POST(request: NextRequest) {
   try {
     const { detectedEmbedding, studentDataset } = await request.json()
@@ -28,12 +31,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[v0] Matching against', studentDataset.length, 'students')
 
-    // Find best match from student dataset
-    let bestMatch: MatchResult = {
-      matched: false,
-      confidence: 0,
-      timestamp: new Date().toISOString(),
-    }
+    const candidates: Array<{ student: StudentData; distance: number; confidence: number }> = []
 
     for (const student of studentDataset) {
       if (!student.embedding) {
@@ -41,30 +39,43 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Calculate similarity (cosine similarity)
-      const similarity = calculateCosineSimilarity(
+      // Compare face descriptors by Euclidean distance (lower = more similar).
+      const distance = calculateEuclideanDistance(
         detectedEmbedding,
         student.embedding
       )
+      const confidence = Math.max(0, Math.min(1, 1 - distance / FACE_DISTANCE_THRESHOLD))
 
-      console.log('[v0] Match score for', student.studentName, ':', similarity.toFixed(3))
-
-      // Confidence threshold: 0.6
-      if (similarity > 0.6 && similarity > bestMatch.confidence) {
-        bestMatch = {
-          matched: true,
-          studentId: student.studentId,
-          studentName: student.studentName,
-          confidence: similarity,
-          timestamp: new Date().toISOString(),
-        }
-      }
+      console.log('[v0] Match score for', student.studentName, ': distance', distance.toFixed(3), 'confidence', confidence.toFixed(3))
+      candidates.push({ student, distance, confidence })
     }
+
+    candidates.sort((a, b) => a.distance - b.distance)
+    const best = candidates[0]
+    const second = candidates[1]
+
+    const withinDistance = !!best && best.distance <= FACE_DISTANCE_THRESHOLD
+    const clearlyBest = !second || (second.distance - (best?.distance ?? 0)) >= FACE_AMBIGUITY_MARGIN
+
+    const bestMatch: MatchResult =
+      best && withinDistance && clearlyBest
+        ? {
+            matched: true,
+            studentId: best.student.studentId,
+            studentName: best.student.studentName,
+            confidence: best.confidence,
+            timestamp: new Date().toISOString(),
+          }
+        : {
+            matched: false,
+            confidence: best?.confidence ?? 0,
+            timestamp: new Date().toISOString(),
+          }
 
     if (bestMatch.matched) {
       console.log('[v0] Face matched to', bestMatch.studentName, 'with confidence', bestMatch.confidence.toFixed(3))
     } else {
-      console.log('[v0] No matching face found (threshold: 0.6)')
+      console.log('[v0] Unknown/ambiguous face; no confident match found')
     }
 
     return NextResponse.json(bestMatch)
@@ -77,19 +88,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function calculateCosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0
-
-  let dotProduct = 0
-  let normA = 0
-  let normB = 0
-
+function calculateEuclideanDistance(a: number[], b: number[]): number {
+  if (a.length !== b.length) return Number.POSITIVE_INFINITY
+  let sum = 0
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i]
-    normA += a[i] * a[i]
-    normB += b[i] * b[i]
+    const d = a[i] - b[i]
+    sum += d * d
   }
-
-  const denominator = Math.sqrt(normA) * Math.sqrt(normB)
-  return denominator === 0 ? 0 : dotProduct / denominator
+  return Math.sqrt(sum)
 }

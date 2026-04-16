@@ -56,16 +56,14 @@ function mapBoxToDisplay(
   }
 }
 
-function euclideanDistanceConfidence01(a: number[], b: number[]) {
-  if (a.length !== b.length) return 0
+function euclideanDistance(a: number[], b: number[]) {
+  if (a.length !== b.length) return Number.POSITIVE_INFINITY
   let sum = 0
   for (let i = 0; i < a.length; i++) {
     const d = a[i] - b[i]
     sum += d * d
   }
-  const distance = Math.sqrt(sum)
-  const confidence = 1 / (1 + distance)
-  return Math.max(0, Math.min(1, confidence))
+  return Math.sqrt(sum)
 }
 
 export function FaceRecognitionCamera({
@@ -109,9 +107,13 @@ export function FaceRecognitionCamera({
     setVideoDims({ w: 0, h: 0 })
   }, [classId, isActive, autoMarkAfterMinutes])
 
-  // Confidence is derived from face-descriptor Euclidean distance and normalized into [0..1].
-  // Requirement: only mark attendance if confidence >= 70%.
-  const CONFIDENCE_THRESHOLD = typeof confidenceThreshold === "number" ? confidenceThreshold : 0.7
+  // Face descriptors from face-api are compared by Euclidean distance (lower is better).
+  // Tuned a bit looser so genuine students are not rejected as unknown.
+  const FACE_DISTANCE_THRESHOLD = 0.62
+  // Ambiguity guard: if top-2 matches are too close, treat as unknown.
+  const FACE_AMBIGUITY_MARGIN = 0.02
+  // Keep prop for backward compatibility (not used for match gating now).
+  void confidenceThreshold
   const SCAN_INTERVAL_MS = typeof detectionIntervalMs === "number" ? detectionIntervalMs : 1800
 
   const rosterKey = useMemo(() => {
@@ -336,35 +338,30 @@ export function FaceRecognitionCamera({
               const desc = det.descriptor ? Array.from(det.descriptor) : null
               if (!desc) continue
 
-              let best: { studentId: string; studentName: string; confidence: number } | null = null
+              const candidates: Array<{ studentId: string; studentName: string; distance: number; confidence: number }> = []
               for (const s of studentDataset) {
                 if (!s.embedding || s.embedding.length !== desc.length) continue
-                const confidence = euclideanDistanceConfidence01(desc, s.embedding)
-                if (!best || confidence > best.confidence) {
-                  best = { studentId: s.studentId, studentName: s.studentName, confidence }
-                }
+                const distance = euclideanDistance(desc, s.embedding)
+                const confidence = Math.max(0, Math.min(1, 1 - distance / FACE_DISTANCE_THRESHOLD))
+                candidates.push({ studentId: s.studentId, studentName: s.studentName, distance, confidence })
               }
+              candidates.sort((a, b) => a.distance - b.distance)
+              const best = candidates[0] ?? null
+              const second = candidates[1] ?? null
+              const withinDistance = Boolean(best && best.distance <= FACE_DISTANCE_THRESHOLD)
+              const clearlyBest = !second || second.distance - (best?.distance ?? 0) >= FACE_AMBIGUITY_MARGIN
+              const matched = Boolean(best && withinDistance && clearlyBest)
 
               const box = det.detection.box
               const mapped = mapBoxToDisplay(box, video.videoWidth, video.videoHeight, cw, ch)
-              const matched = best && best.confidence >= CONFIDENCE_THRESHOLD
-              octx.strokeStyle = matched ? "#22c55e" : best ? "#eab308" : "#ef4444"
-              octx.fillStyle = matched
-                ? "rgba(34,197,94,0.15)"
-                : best
-                  ? "rgba(234,179,8,0.15)"
-                  : "rgba(239,68,68,0.12)"
+              octx.strokeStyle = matched ? "#22c55e" : "#ef4444"
+              octx.fillStyle = matched ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.12)"
               octx.fillRect(mapped.x, mapped.y, mapped.width, mapped.height)
               octx.strokeRect(mapped.x, mapped.y, mapped.width, mapped.height)
 
-              const label =
-                matched && best
-                  ? `${best.studentName} (${Math.round(best.confidence * 100)}%)`
-                  : best
-                    ? `${best.studentName}? (${Math.round(best.confidence * 100)}%)`
-                    : "Unknown"
+              const label = matched && best ? `${best.studentName} (${Math.round(best.confidence * 100)}%)` : "Unknown"
               const tw = octx.measureText(label).width
-              octx.fillStyle = matched ? "#166534" : best ? "#854d0e" : "#991b1b"
+              octx.fillStyle = matched ? "#166534" : "#991b1b"
               octx.fillRect(mapped.x, Math.max(0, mapped.y - 22), tw + 12, 22)
               octx.fillStyle = "#fff"
               octx.fillText(label, mapped.x + 6, Math.max(14, mapped.y - 6))
@@ -378,16 +375,21 @@ export function FaceRecognitionCamera({
           if (!det.descriptor) continue
           const detected = Array.from(det.descriptor)
 
-          let best: { studentId: string; studentName: string; confidence: number } | null = null
+          const candidates: Array<{ studentId: string; studentName: string; distance: number; confidence: number }> = []
           for (const s of studentDataset) {
             if (!s.embedding || s.embedding.length !== detected.length) continue
-            const confidence = euclideanDistanceConfidence01(detected, s.embedding)
-            if (!best || confidence > best.confidence) {
-              best = { studentId: s.studentId, studentName: s.studentName, confidence }
-            }
+            const distance = euclideanDistance(detected, s.embedding)
+            const confidence = Math.max(0, Math.min(1, 1 - distance / FACE_DISTANCE_THRESHOLD))
+            candidates.push({ studentId: s.studentId, studentName: s.studentName, distance, confidence })
           }
+          candidates.sort((a, b) => a.distance - b.distance)
+          const best = candidates[0] ?? null
+          const second = candidates[1] ?? null
 
-          if (!best || best.confidence < CONFIDENCE_THRESHOLD) continue
+          if (!best) continue
+          const withinDistance = best.distance <= FACE_DISTANCE_THRESHOLD
+          const clearlyBest = !second || second.distance - best.distance >= FACE_AMBIGUITY_MARGIN
+          if (!withinDistance || !clearlyBest) continue
           if (seenThisFrame.has(best.studentId)) continue
           seenThisFrame.add(best.studentId)
 
@@ -441,7 +443,6 @@ export function FaceRecognitionCamera({
     modelsReady,
     tryMarkStudent,
     SCAN_INTERVAL_MS,
-    CONFIDENCE_THRESHOLD,
   ])
 
   const formatTime = (seconds: number) => {

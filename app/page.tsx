@@ -7,6 +7,7 @@ import { TeacherPortal } from "@/components/dashboards/teacher-portal"
 import { SecurityDashboard } from "@/components/dashboards/security-dashboard"
 import { StudentPortal } from "@/components/dashboards/student-portal"
 import { LoginPage } from "@/components/login-page"
+import { LocalStorageSync } from "@/components/persistence/local-storage-sync"
 
 type UserRole = "admin" | "teacher" | "security" | "student"
 
@@ -44,13 +45,21 @@ export default function Home() {
   }
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLogin} />
+    return (
+      <>
+        <LocalStorageSync />
+        <LoginPage onLogin={handleLogin} />
+      </>
+    )
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} onLogout={handleLogout} />
-      <main className="flex-1 overflow-auto">{renderDashboard()}</main>
-    </div>
+    <>
+      <LocalStorageSync />
+      <div className="flex h-screen bg-background">
+        <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} onLogout={handleLogout} />
+        <main className="flex-1 overflow-auto">{renderDashboard()}</main>
+      </div>
+    </>
   )
 }
