@@ -21,6 +21,13 @@ interface Student {
   parentContact: string
 }
 
+interface Teacher {
+  id: string
+  name: string
+  email: string
+  password: string
+}
+
 interface Section {
   id: string
   name: string
@@ -41,12 +48,14 @@ interface ClassData {
 interface AdminData {
   classes: ClassData[]
   students: Student[]
+  teachers: Teacher[]
 }
 
 export function AdminDataManager() {
-  const [activeTab, setActiveTab] = useState<'classes' | 'sections' | 'students' | 'reports' | 'todaysclasses' | 'analytics' | 'enrollment' | 'cameras' | 'facial'>('classes')
+  const [activeTab, setActiveTab] = useState<'faculty' | 'classes' | 'sections' | 'students' | 'reports' | 'todaysclasses' | 'analytics' | 'enrollment' | 'cameras' | 'facial'>('faculty')
   const [classes, setClasses] = useState<ClassData[]>([])
   const [students, setStudents] = useState<Student[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
   const [editingClass, setEditingClass] = useState<ClassData | null>(null)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [selectedClassId, setSelectedClassId] = useState<string>('')
@@ -68,6 +77,13 @@ export function AdminDataManager() {
     parentContact: '',
   })
 
+  const [newTeacher, setNewTeacher] = useState({
+    id: '',
+    name: '',
+    email: '',
+    password: 'teacher123',
+  })
+
   const [newSection, setNewSection] = useState({
     name: '',
   })
@@ -80,6 +96,7 @@ export function AdminDataManager() {
         const data = JSON.parse(stored)
         const loadedClasses = data.classes || []
         let loadedStudents = data.students || []
+        const loadedTeachers = data.teachers || []
         
         // Migrate old student data format (classId) to new format (classIds)
         const migratedStudents = loadedStudents.map((student: any) => ({
@@ -90,11 +107,13 @@ export function AdminDataManager() {
         console.log('[v0] Loaded', loadedClasses.length, 'classes and', migratedStudents.length, 'students')
         setClasses(loadedClasses)
         setStudents(migratedStudents)
+        setTeachers(loadedTeachers)
         
         // Save migrated data back (format update only, no removal of students)
         localStorage.setItem('adminData', JSON.stringify({
           classes: loadedClasses,
           students: migratedStudents,
+          teachers: loadedTeachers,
         }))
         
         // Clean up related records (attendance, grades, facial data)
@@ -106,18 +125,72 @@ export function AdminDataManager() {
   }, [])
 
   // Save data to localStorage
-  const saveData = (updatedClasses?: ClassData[], updatedStudents?: Student[]) => {
+  const saveData = (updatedClasses?: ClassData[], updatedStudents?: Student[], updatedTeachers?: Teacher[]) => {
     const data: AdminData = {
       classes: updatedClasses || classes,
       students: updatedStudents || students,
+      teachers: updatedTeachers || teachers,
     }
     localStorage.setItem('adminData', JSON.stringify(data))
+  }
+
+  const addTeacher = () => {
+    if (!newTeacher.id || !newTeacher.name || !newTeacher.email || !newTeacher.password) {
+      alert('Please fill in all faculty fields (ID, name, email, password).')
+      return
+    }
+
+    const normalizedId = newTeacher.id.trim()
+    const normalizedEmail = newTeacher.email.trim().toLowerCase()
+    if (teachers.some((t) => t.id.toLowerCase() === normalizedId.toLowerCase())) {
+      alert('A faculty member with this ID already exists.')
+      return
+    }
+    if (teachers.some((t) => t.email.toLowerCase() === normalizedEmail)) {
+      alert('A faculty member with this email already exists.')
+      return
+    }
+
+    const updatedTeachers = [
+      ...teachers,
+      {
+        id: normalizedId,
+        name: newTeacher.name.trim(),
+        email: normalizedEmail,
+        password: newTeacher.password,
+      },
+    ]
+    setTeachers(updatedTeachers)
+    saveData(undefined, undefined, updatedTeachers)
+    setNewTeacher({ id: '', name: '', email: '', password: 'teacher123' })
+  }
+
+  const deleteTeacher = (teacherId: string) => {
+    const assignedClassCount = classes.filter((cls) => cls.classTeacher === teacherId).length
+    if (assignedClassCount > 0) {
+      alert('This teacher is assigned to classes. Reassign those classes first.')
+      return
+    }
+    if (!confirm('Delete this faculty account?')) return
+
+    const updatedTeachers = teachers.filter((t) => t.id !== teacherId)
+    setTeachers(updatedTeachers)
+    saveData(undefined, undefined, updatedTeachers)
+  }
+
+  const getTeacherNameById = (teacherId: string) => {
+    const teacher = teachers.find((t) => t.id === teacherId)
+    return teacher?.name || teacherId || 'Unassigned'
   }
 
   // CLASS MANAGEMENT
   const addClass = () => {
     if (!newClass.name || !newClass.classTeacher) {
-      alert('Please fill in all fields')
+      alert('Please fill in class name and assigned teacher')
+      return
+    }
+    if (!teachers.some((teacher) => teacher.id === newClass.classTeacher)) {
+      alert('Please choose a valid teacher from faculty list.')
       return
     }
     if (!newClass.day || !newClass.startTime || !newClass.endTime) {
@@ -275,7 +348,8 @@ export function AdminDataManager() {
         localStorage.removeItem('gradesData')
         setClasses([])
         setStudents([])
-        setActiveTab('classes')
+        setTeachers([])
+        setActiveTab('faculty')
         alert('All data has been cleared. The system is now reset.')
         console.log('[v0] All data has been reset')
       }
@@ -302,6 +376,14 @@ export function AdminDataManager() {
 
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b border-border mb-6 overflow-x-auto">
+        <Button
+          variant={activeTab === 'faculty' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('faculty')}
+          className="gap-2"
+        >
+          <Users className="w-4 h-4" />
+          Faculty
+        </Button>
         <Button
           variant={activeTab === 'classes' ? 'default' : 'ghost'}
           onClick={() => setActiveTab('classes')}
@@ -376,6 +458,73 @@ export function AdminDataManager() {
         </Button>
       </div>
 
+      {/* FACULTY TAB */}
+      {activeTab === 'faculty' && (
+        <div className="space-y-4">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Add Faculty Account</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  placeholder="Teacher Name"
+                  value={newTeacher.name}
+                  onChange={(e) => setNewTeacher({ ...newTeacher, name: e.target.value })}
+                />
+                <Input
+                  placeholder="Teacher ID (e.g., T001)"
+                  value={newTeacher.id}
+                  onChange={(e) => setNewTeacher({ ...newTeacher, id: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  placeholder="Teacher Email"
+                  type="email"
+                  value={newTeacher.email}
+                  onChange={(e) => setNewTeacher({ ...newTeacher, email: e.target.value })}
+                />
+                <Input
+                  placeholder="Teacher Password"
+                  value={newTeacher.password}
+                  onChange={(e) => setNewTeacher({ ...newTeacher, password: e.target.value })}
+                />
+              </div>
+              <Button onClick={addTeacher} className="w-full">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Faculty
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Faculty Accounts ({teachers.length})</h3>
+            {teachers.length === 0 ? (
+              <p className="text-sm text-foreground/60">No faculty added yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {teachers.map((teacher) => (
+                  <div key={teacher.id} className="flex items-center justify-between rounded-md border border-border p-3">
+                    <div>
+                      <p className="font-medium text-foreground">{teacher.name}</p>
+                      <p className="text-sm text-foreground/60">ID: {teacher.id}</p>
+                      <p className="text-sm text-foreground/60">Email: {teacher.email}</p>
+                    </div>
+                    <Button
+                      onClick={() => deleteTeacher(teacher.id)}
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
       {/* MANAGE CLASSES TAB */}
       {activeTab === 'classes' && (
         <div className="space-y-4">
@@ -388,12 +537,22 @@ export function AdminDataManager() {
                   value={newClass.name}
                   onChange={(e) => setNewClass({ ...newClass, name: e.target.value })}
                 />
-                <Input
-                  placeholder="Class Teacher Name"
+                <select
                   value={newClass.classTeacher}
                   onChange={(e) => setNewClass({ ...newClass, classTeacher: e.target.value })}
-                />
+                  className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                >
+                  <option value="">Select teacher</option>
+                  {teachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name} ({teacher.id})
+                    </option>
+                  ))}
+                </select>
               </div>
+              {teachers.length === 0 && (
+                <p className="text-xs text-destructive">Add faculty first to assign a class teacher.</p>
+              )}
               
               {/* Schedule Section */}
               <div className="border-t pt-4">
@@ -459,11 +618,23 @@ export function AdminDataManager() {
                         onChange={(e) => setEditingClass({ ...editingClass, name: e.target.value })}
                         placeholder="Class name"
                       />
-                      <Input
+                      <select
                         value={editingClass.classTeacher}
                         onChange={(e) => setEditingClass({ ...editingClass, classTeacher: e.target.value })}
-                        placeholder="Teacher name"
-                      />
+                        className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                      >
+                        <option value="">Select teacher</option>
+                        {editingClass.classTeacher && !teachers.some((teacher) => teacher.id === editingClass.classTeacher) && (
+                          <option value={editingClass.classTeacher}>
+                            Legacy: {editingClass.classTeacher}
+                          </option>
+                        )}
+                        {teachers.map((teacher) => (
+                          <option key={teacher.id} value={teacher.id}>
+                            {teacher.name} ({teacher.id})
+                          </option>
+                        ))}
+                      </select>
                       
                       {/* Schedule Edit Section */}
                       <div className="border-t pt-3">
@@ -513,7 +684,7 @@ export function AdminDataManager() {
                       <div className="flex-1">
                         <h4 className="font-semibold text-foreground">{cls.name}</h4>
                         <div className="flex flex-wrap gap-4 text-sm text-foreground/60 mt-2">
-                          <span>Teacher: {cls.classTeacher}</span>
+                          <span>Teacher: {getTeacherNameById(cls.classTeacher)}</span>
                           <span>Students: {cls.totalStudents}</span>
                           {cls.day && (
                             <>
@@ -818,7 +989,7 @@ export function AdminDataManager() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h4 className="font-semibold text-foreground">{cls.name}</h4>
-                          <p className="text-sm text-foreground/60">Teacher: {cls.classTeacher}</p>
+                          <p className="text-sm text-foreground/60">Teacher: {getTeacherNameById(cls.classTeacher)}</p>
                           <div className="flex gap-4 mt-3">
                             <span className="text-sm text-foreground/60">
                               <span className="font-semibold">{classStudents.length}</span> Students
@@ -907,7 +1078,7 @@ export function AdminDataManager() {
                 <div key={cls.id} className="flex items-center justify-between p-3 bg-background rounded border border-border">
                   <div>
                     <p className="font-medium text-foreground">{cls.name}</p>
-                    <p className="text-sm text-foreground/60">Teacher: {cls.classTeacher}</p>
+                    <p className="text-sm text-foreground/60">Teacher: {getTeacherNameById(cls.classTeacher)}</p>
                   </div>
                   <div className="text-right">
                     <Badge>{cls.totalStudents} Students</Badge>

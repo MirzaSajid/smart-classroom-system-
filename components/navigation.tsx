@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useMemo } from "react"
 
 import { Button } from "@/components/ui/button"
 import { BarChart3, Users, Shield, User, LogOut } from "lucide-react"
@@ -14,6 +15,17 @@ interface NavigationProps {
 }
 
 export function Navigation({ currentRole, onRoleChange, onLogout }: NavigationProps) {
+  const signedInRole = useMemo(() => {
+    try {
+      const userRaw = localStorage.getItem("currentUser")
+      if (!userRaw) return currentRole
+      const parsed = JSON.parse(userRaw)
+      return (parsed?.role as UserRole) || currentRole
+    } catch {
+      return currentRole
+    }
+  }, [currentRole])
+
   const roles: { id: UserRole; label: string; icon: React.ReactNode }[] = [
     { id: "admin", label: "Admin", icon: <BarChart3 className="w-5 h-5" /> },
     { id: "teacher", label: "Teacher", icon: <Users className="w-5 h-5" /> },
@@ -30,25 +42,23 @@ export function Navigation({ currentRole, onRoleChange, onLogout }: NavigationPr
 
       <nav className="flex-1 space-y-2">
         {roles.map((role) => {
-          // Students can only see their own portal, not admin/teacher/security dashboards
-          if (currentRole === "student" && role.id !== "student") {
+          // Admin panel should not expose direct teacher switching.
+          if (signedInRole === "admin" && role.id === "teacher") {
             return null
           }
-          
-          // Admin/teacher/security users cannot see student portal
-          if ((currentRole === "admin" || currentRole === "teacher" || currentRole === "security") && role.id === "student") {
+
+          // Non-admin users can only access their own portal.
+          if (signedInRole !== "admin" && role.id !== signedInRole) {
             return null
           }
-          
-          // Admin/teacher/security users can see all other dashboards
+
           return (
             <Button
               key={role.id}
               variant={currentRole === role.id ? "default" : "ghost"}
               className="w-full justify-start gap-3"
               onClick={() => {
-                // Prevent students from switching to other roles
-                if (currentRole === "student" && role.id !== "student") {
+                if (signedInRole !== "admin" && role.id !== signedInRole) {
                   return
                 }
                 onRoleChange(role.id)

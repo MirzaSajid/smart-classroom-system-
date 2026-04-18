@@ -269,8 +269,9 @@ export function AttendanceSession({ classId, className, startTime }: AttendanceS
           autoSubmitted: true,
         }),
       })
+      const result = await response.json().catch(() => ({}))
 
-      if (response.ok || savedLocally) {
+      if ((response.ok && result?.ok) || savedLocally) {
         setSessionSaved(true)
       }
     } catch (error) {
@@ -378,8 +379,9 @@ export function AttendanceSession({ classId, className, startTime }: AttendanceS
           autoSubmitted: false,
         }),
       })
+      const result = await response.json().catch(() => ({}))
 
-      if (response.ok || savedLocally) {
+      if ((response.ok && result?.ok) || savedLocally) {
         setSessionActive(false)
         setSessionSaved(true)
         // Stop python process once session ends.

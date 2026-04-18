@@ -16,6 +16,7 @@ type AdminData = {
 
 export function TeacherPortal() {
   const [adminData, setAdminData] = useState<AdminData | null>(null)
+  const [currentTeacherId, setCurrentTeacherId] = useState<string>("")
   const [currentTeacher, setCurrentTeacher] = useState<string>("")
   const [activeTab, setActiveTab] = useState<"overview" | "attendance" | "dataset" | "grades">("attendance")
   const [selectedClassId, setSelectedClassId] = useState<string>("")
@@ -35,6 +36,7 @@ export function TeacherPortal() {
     if (user) {
       try {
         const parsed = JSON.parse(user)
+        setCurrentTeacherId(parsed?.teacherId || "")
         setCurrentTeacher(parsed?.name || parsed?.username || "")
       } catch (e) {
         console.error("[v0] Failed to load current user:", e)
@@ -44,9 +46,12 @@ export function TeacherPortal() {
 
   const myClasses = useMemo(() => {
     const classes = adminData?.classes || []
-    if (!currentTeacher) return classes
-    return classes.filter((cls: any) => cls?.classTeacher === currentTeacher)
-  }, [adminData, currentTeacher])
+    if (!currentTeacherId && !currentTeacher) return classes
+    return classes.filter((cls: any) => {
+      const assigned = String(cls?.classTeacher || "")
+      return assigned === String(currentTeacherId) || assigned === String(currentTeacher)
+    })
+  }, [adminData, currentTeacherId, currentTeacher])
 
   const selectedClass = useMemo(() => {
     return myClasses.find((c: any) => String(c?.id) === String(selectedClassId)) || null

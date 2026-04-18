@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Shield, GraduationCap, Eye, EyeOff, Lock, User, Building2 } from "lucide-react"
+import { Shield, GraduationCap, Eye, EyeOff, Lock, User, Building2, Users } from "lucide-react"
 
-type LoginRole = "admin" | "student"
+type LoginRole = "admin" | "teacher" | "student"
 
 interface LoginPageProps {
   onLogin: (role: "admin" | "teacher" | "security" | "student") => void
@@ -38,6 +38,26 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         onLogin("admin")
       } else {
         setError("Invalid admin credentials. Try: admin@campus.edu / admin123")
+      }
+    } else if (selectedRole === "teacher") {
+      const adminData = localStorage.getItem('adminData')
+      if (adminData) {
+        const parsed = JSON.parse(adminData)
+        const teacher = parsed.teachers?.find(
+          (t: any) => String(t.email || "").toLowerCase() === email.toLowerCase() && t.password === password,
+        )
+
+        if (teacher) {
+          localStorage.setItem(
+            'currentUser',
+            JSON.stringify({ role: 'teacher', email, teacherId: teacher.id, name: teacher.name }),
+          )
+          onLogin("teacher")
+        } else {
+          setError("Invalid teacher credentials. Check your faculty email and password.")
+        }
+      } else {
+        setError("No faculty accounts available. Ask admin to add one in Faculty tab.")
       }
     } else if (selectedRole === "student") {
       // Authenticate against student data in localStorage
@@ -112,6 +132,26 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <div className="flex-1 h-px bg-border"></div>
           </div>
 
+          {/* Teacher Login Link */}
+          <div className="space-y-4">
+            <p className="text-center text-sm text-muted-foreground">Are you faculty?</p>
+            <Button
+              onClick={() => setSelectedRole("teacher")}
+              variant="outline"
+              className="w-full h-auto py-4 px-4 bg-primary/5 hover:bg-primary/10"
+            >
+              <div className="flex items-center gap-3 w-full">
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div className="text-left flex-1">
+                  <p className="font-semibold text-foreground">Teacher Login</p>
+                  <p className="text-xs text-muted-foreground">Access teacher portal</p>
+                </div>
+              </div>
+            </Button>
+          </div>
+
           {/* Student Login Link */}
           <div className="space-y-4">
             <p className="text-center text-sm text-muted-foreground">Are you a student?</p>
@@ -148,18 +188,20 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <div className="flex justify-center">
             <div
               className={`h-16 w-16 rounded-xl flex items-center justify-center ${
-                selectedRole === "admin" ? "bg-primary/10" : "bg-accent/10"
+                selectedRole === "admin" || selectedRole === "teacher" ? "bg-primary/10" : "bg-accent/10"
               }`}
             >
               {selectedRole === "admin" ? (
                 <Shield className="h-8 w-8 text-primary" />
+              ) : selectedRole === "teacher" ? (
+                <Users className="h-8 w-8 text-primary" />
               ) : (
                 <GraduationCap className="h-8 w-8 text-accent" />
               )}
             </div>
           </div>
           <h1 className="text-2xl font-bold text-foreground">
-            {selectedRole === "admin" ? "Admin Login" : "Student Login"}
+            {selectedRole === "admin" ? "Admin Login" : selectedRole === "teacher" ? "Teacher Login" : "Student Login"}
           </h1>
           <p className="text-muted-foreground text-sm">Enter your credentials to access the dashboard</p>
         </div>
@@ -171,7 +213,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <CardDescription>
               {selectedRole === "admin"
                 ? "Access administrative controls and monitoring"
-                : "View your attendance and class information"}
+                : selectedRole === "teacher"
+                  ? "Access teacher operations and attendance tools"
+                  : "View your attendance and class information"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -183,7 +227,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   <Input
                     id="email"
                     type="email"
-                    placeholder={selectedRole === "admin" ? "admin@campus.edu" : "student@campus.edu"}
+                    placeholder={
+                      selectedRole === "admin"
+                        ? "admin@campus.edu"
+                        : selectedRole === "teacher"
+                          ? "teacher@campus.edu"
+                          : "student@campus.edu"
+                    }
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
@@ -237,6 +287,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 <p>
                   <span className="font-medium">Admin:</span> admin@campus.edu / admin123
                 </p>
+              ) : selectedRole === "teacher" ? (
+                <div className="space-y-2">
+                  <p>
+                    <span className="font-medium">Teachers:</span> Use faculty email and password
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium">Default Password:</span> teacher123
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   <p>

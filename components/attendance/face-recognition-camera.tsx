@@ -247,19 +247,38 @@ export function FaceRecognitionCamera({
       return
     }
 
-    fetch("/api/attendance/mark", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        studentId: newStudent.id,
-        classId,
-        date: today,
-        status: "present",
-        method: "face_recognition",
-        markedAt: newStudent.timestamp.toISOString(),
-        confidence: newStudent.confidence,
-      }),
-    }).catch(() => {})
+    const payload = {
+      studentId: newStudent.id,
+      classId,
+      date: today,
+      status: "present",
+      method: "face_recognition",
+      markedAt: newStudent.timestamp.toISOString(),
+      confidence: newStudent.confidence,
+    }
+
+    const persistMarkWithRetry = async () => {
+      const maxAttempts = 3
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const res = await fetch("/api/attendance/mark", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+          const json = await res.json().catch(() => ({}))
+          if (res.ok && json?.ok) return
+          throw new Error(json?.error || `Attendance save failed (attempt ${attempt})`)
+        } catch (error) {
+          if (attempt === maxAttempts) {
+            console.error("[v0] Failed to persist face attendance mark:", error)
+            return
+          }
+          await new Promise((resolve) => setTimeout(resolve, 350 * attempt))
+        }
+      }
+    }
+    void persistMarkWithRetry()
 
     try {
       const existingRecords = JSON.parse(localStorage.getItem("attendanceRecords") || "[]") as any[]
