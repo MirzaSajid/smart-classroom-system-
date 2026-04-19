@@ -42,8 +42,8 @@ export function Navigation({ currentRole, onRoleChange, onLogout }: NavigationPr
 
       <nav className="flex-1 space-y-2">
         {roles.map((role) => {
-          // Admin panel should not expose direct teacher switching.
-          if (signedInRole === "admin" && role.id === "teacher") {
+          // Admins stay on admin tooling; no direct student/teacher portal switching from the shell.
+          if (signedInRole === "admin" && (role.id === "teacher" || role.id === "student")) {
             return null
           }
 

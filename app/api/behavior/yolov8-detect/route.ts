@@ -1,9 +1,12 @@
-import { NextRequest } from 'next/server'
+import { NextRequest } from "next/server"
 
-// API keys are kept secure on the server
-const ROBOFLOW_API_KEY = process.env.ROBOFLOW_API_KEY || ''
-const ROBOFLOW_PROJECT_ID = process.env.ROBOFLOW_PROJECT_ID || ''
-const ROBOFLOW_VERSION = process.env.ROBOFLOW_VERSION || '1'
+import { normalizeBehaviorClass, normalizeBboxFromRoboflow } from "@/lib/behavior-class-map"
+
+// API keys are kept secure on the server. Use a Roboflow Universe / workspace project
+// (YOLOv5/v8/v11). Weights trained on Kaggle can be uploaded to Roboflow for hosted inference.
+const ROBOFLOW_API_KEY = process.env.ROBOFLOW_API_KEY || ""
+const ROBOFLOW_PROJECT_ID = process.env.ROBOFLOW_PROJECT_ID || ""
+const ROBOFLOW_VERSION = process.env.ROBOFLOW_VERSION || "1"
 
 // Helper to check if env vars are actually set (not placeholder strings)
 function areApiKeysConfigured(): boolean {
@@ -12,43 +15,16 @@ function areApiKeysConfigured(): boolean {
   return hasValidApiKey && hasValidProjectId
 }
 
-// Severity mapping for behaviors
-const BEHAVIOR_SEVERITY: Record<string, 'low' | 'medium' | 'high' | 'critical'> = {
-  'smoking': 'high',
-  'vaping': 'high',
-  'mobile_use': 'medium',
-  'weapon': 'critical',
-  'fighting': 'critical',
-  'unauthorized_person': 'high',
-  'unauthorized_student': 'medium',
-}
-
-// Demo mode - simulates behavior detection for testing without Roboflow API
-function generateDemoBehaviorDetections() {
-  const behaviors = [
-    { class: 'smoking', confidence: 0.87 },
-    { class: 'vaping', confidence: 0.82 },
-    { class: 'mobile_use', confidence: 0.75 },
-    { class: 'weapon', confidence: 0.91 },
-    { class: 'fighting', confidence: 0.84 },
-    { class: 'unauthorized_person', confidence: 0.79 },
-  ]
-
-  // 40% chance of detecting a behavior each call (higher for demo visibility)
-  const detected = behaviors.filter(() => Math.random() < 0.4)
-  
-  return detected.map((behavior) => ({
-    class: behavior.class,
-    severity: BEHAVIOR_SEVERITY[behavior.class] || 'medium',
-    confidence: Math.max(0.6, Math.min(0.99, behavior.confidence + Math.random() * 0.1 - 0.05)),
-    bbox: {
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      width: 20 + Math.random() * 40,
-      height: 30 + Math.random() * 50,
-    },
-    timestamp: new Date().toISOString(),
-  }))
+// Severity mapping for canonical behavior classes (after normalizeBehaviorClass)
+const BEHAVIOR_SEVERITY: Record<string, "low" | "medium" | "high" | "critical"> = {
+  smoking: "high",
+  vaping: "high",
+  phone_use: "medium",
+  mobile_use: "medium",
+  weapon: "critical",
+  fighting: "critical",
+  unauthorized_person: "high",
+  unauthorized_student: "medium",
 }
 
 export async function POST(request: NextRequest) {
@@ -76,7 +52,7 @@ export async function POST(request: NextRequest) {
           frameId,
           mode: 'disabled',
           message:
-            'Behavior detection is disabled. Set ROBOFLOW_API_KEY and ROBOFLOW_PROJECT_ID in .env and restart the server.',
+            "Behavior detection is disabled. Set ROBOFLOW_API_KEY and ROBOFLOW_PROJECT_ID (and optional ROBOFLOW_VERSION) in .env, then restart. Use a Roboflow Universe model or upload Kaggle-trained YOLO weights to Roboflow Deploy.",
         },
         { status: 503 },
       )
@@ -131,19 +107,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse Roboflow detections
-    const detections = (result.predictions || []).map((pred: any) => ({
-      class: pred.class || 'unknown',
-      severity: BEHAVIOR_SEVERITY[pred.class] || 'medium',
-      confidence: pred.confidence || 0,
-      bbox: {
-        x: pred.x || 0,
-        y: pred.y || 0,
-        width: pred.width || 0,
-        height: pred.height || 0,
-      },
-      timestamp: new Date().toISOString(),
-    }))
+    const imgW = Math.round(Number(result?.image?.width)) || 640
+    const imgH = Math.round(Number(result?.image?.height)) || 480
+
+    // Parse Roboflow detections → canonical classes (COCO “cell phone”, weapon datasets, etc.)
+    const detections = (result.predictions || []).map((pred: any) => {
+      const rawClass = String(pred.class || "unknown")
+      const canonical = normalizeBehaviorClass(rawClass)
+      const bbox = normalizeBboxFromRoboflow(
+        {
+          x: Number(pred.x) || 0,
+          y: Number(pred.y) || 0,
+          width: Number(pred.width) || 0,
+          height: Number(pred.height) || 0,
+        },
+        imgW,
+        imgH,
+      )
+      return {
+        class: canonical,
+        severity: BEHAVIOR_SEVERITY[canonical] || "medium",
+        confidence: Number(pred.confidence) || 0,
+        bbox,
+        timestamp: new Date().toISOString(),
+      }
+    })
 
     return Response.json({
       success: true,

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ClipboardCheck, Users, BookOpen, Smile, GraduationCap } from "lucide-react"
+import { ClipboardCheck, Users, BookOpen, Smile, GraduationCap, Smartphone } from "lucide-react"
+import { BehaviorDetectionMonitor } from "@/components/behavior/behavior-detection-monitor"
 import { AttendanceSession } from "@/components/attendance/attendance-session"
 import { StudentDatasetManager } from "@/components/attendance/student-dataset-manager"
 import { GradesManager } from "@/components/admin/grades-manager"
@@ -18,7 +19,7 @@ export function TeacherPortal() {
   const [adminData, setAdminData] = useState<AdminData | null>(null)
   const [currentTeacherId, setCurrentTeacherId] = useState<string>("")
   const [currentTeacher, setCurrentTeacher] = useState<string>("")
-  const [activeTab, setActiveTab] = useState<"overview" | "attendance" | "dataset" | "grades">("attendance")
+  const [activeTab, setActiveTab] = useState<"overview" | "attendance" | "dataset" | "grades" | "behavior">("attendance")
   const [selectedClassId, setSelectedClassId] = useState<string>("")
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null)
 
@@ -122,6 +123,14 @@ export function TeacherPortal() {
           <BookOpen className="w-4 h-4" />
           Overview
         </Button>
+        <Button
+          variant={activeTab === "behavior" ? "default" : "ghost"}
+          onClick={() => setActiveTab("behavior")}
+          className="gap-2"
+        >
+          <Smartphone className="w-4 h-4" />
+          Class behavior
+        </Button>
       </div>
 
       {/* ATTENDANCE TAB (restored full facial attendance flow) */}
@@ -199,6 +208,26 @@ export function TeacherPortal() {
       {/* GRADES TAB */}
       {activeTab === "grades" && (
         <GradesManager />
+      )}
+
+      {/* CLASS BEHAVIOR — mobile / device use (Roboflow pretrained) */}
+      {activeTab === "behavior" && (
+        <div className="space-y-4">
+          <Card className="p-4">
+            <p className="text-sm text-foreground/80">
+              Live check for <span className="font-medium text-foreground">phones and mobile devices</span> during
+              class. Connect a Roboflow-hosted model (Universe phone/cell detection or your own YOLO export from{" "}
+              <span className="font-medium">Kaggle</span> uploaded to Roboflow). Set{" "}
+              <code className="text-xs bg-muted px-1 rounded">ROBOFLOW_*</code> env vars on the server.
+            </p>
+          </Card>
+          <BehaviorDetectionMonitor
+            cameraId={selectedClassId ? `classroom-${selectedClassId}` : "teacher-class-cam"}
+            sceneTitle="In-class device monitoring"
+            alertLocationLabel="Classroom"
+            modelHint="Recommended: a model that detects cell phones / handheld devices. Raw labels are normalized in lib/behavior-class-map.ts (e.g. COCO “cell phone” → phone_use)."
+          />
+        </div>
       )}
 
       {/* OVERVIEW TAB */}

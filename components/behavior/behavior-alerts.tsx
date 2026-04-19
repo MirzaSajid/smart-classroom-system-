@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import {
   AlertTriangle,
@@ -23,31 +23,70 @@ interface BehaviorAlert {
   resolved: boolean
 }
 
-export function BehaviorAlerts() {
+type BehaviorAlertsProps = {
+  isLive?: boolean
+  cameraId?: string
+  sessionStartedAt?: number | null
+  excludeTypes?: string[]
+}
+
+export function BehaviorAlerts({
+  isLive = false,
+  cameraId,
+  sessionStartedAt = null,
+  excludeTypes = ['Vape Detection'],
+}: BehaviorAlertsProps) {
   const [alerts, setAlerts] = useState<BehaviorAlert[]>([])
   const [notification, setNotification] = useState<BehaviorAlert | null>(null)
+  const lastNotifiedIdRef = useRef<string | null>(null)
 
   // Load real-time alerts from localStorage and YOLOv8 detection
   useEffect(() => {
+    if (!isLive) {
+      setAlerts([])
+      setNotification(null)
+      lastNotifiedIdRef.current = null
+      return
+    }
+
     const loadAlerts = () => {
       const stored = localStorage.getItem('behaviorAlerts')
       if (stored) {
         try {
-          const parsedAlerts = JSON.parse(stored).map((alert: any) => ({
-            id: `alert-${alert.timestamp}`,
-            type: alert.type.replace(/_/g, ' ').toUpperCase(),
-            severity: alert.severity,
-            camera: alert.cameraId,
-            location: alert.location,
-            timestamp: new Date(alert.timestamp),
-            description: alert.description,
-            resolved: false,
-          }))
+          const parsedAlerts = JSON.parse(stored)
+            .filter((alert: any) => {
+              const matchesCamera = cameraId ? alert.cameraId === cameraId : true
+              const startedAfter =
+                sessionStartedAt != null
+                  ? new Date(alert.timestamp || 0).getTime() >= sessionStartedAt
+                  : true
+              const excluded = excludeTypes.some(
+                (type) => String(alert.type || '').toLowerCase() === type.toLowerCase(),
+              )
+              return matchesCamera && startedAfter && !excluded
+            })
+            .map((alert: any) => ({
+              id: String(alert.id ?? `alert-${alert.timestamp}-${alert.cameraId ?? 'cam'}`),
+              type: String(alert.type || 'unknown').replace(/_/g, ' ').toUpperCase(),
+              severity: alert.severity,
+              camera: alert.cameraId,
+              location: alert.location,
+              timestamp: new Date(alert.timestamp),
+              description: alert.description,
+              resolved: false,
+            }))
+            .sort((a: BehaviorAlert, b: BehaviorAlert) => b.timestamp.getTime() - a.timestamp.getTime())
+
           setAlerts(parsedAlerts.slice(0, 20))
 
-          // Show notification for the latest alert if it's critical or high severity
-          const latestAlert = parsedAlerts[parsedAlerts.length - 1]
-          if (latestAlert && (latestAlert.severity === 'critical' || latestAlert.severity === 'high')) {
+          // Show notification for a new latest alert if it's critical or high severity
+          const latestAlert = parsedAlerts[0]
+          if (
+            latestAlert &&
+            lastNotifiedIdRef.current !== latestAlert.id &&
+            (latestAlert.severity === 'critical' || latestAlert.severity === 'high')
+          ) {
+            lastNotifiedIdRef.current = latestAlert.id
             setNotification(latestAlert)
             setTimeout(() => setNotification(null), 7000)
           }
@@ -62,7 +101,7 @@ export function BehaviorAlerts() {
     const interval = setInterval(loadAlerts, 2000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [cameraId, excludeTypes, isLive, sessionStartedAt])
 
   const resolveAlert = (id: string) => {
     setAlerts((prev) =>

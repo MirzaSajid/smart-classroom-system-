@@ -21,7 +21,26 @@ interface Alert {
   cameraId: string
 }
 
-export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: string }) {
+type BehaviorDetectionMonitorProps = {
+  cameraId?: string
+  /** Shown in the card header (e.g. “Classroom monitoring”). */
+  sceneTitle?: string
+  /** Stored on alerts / incidents for Security Overview (e.g. “Classroom”, “Campus”). */
+  alertLocationLabel?: string
+  /** Short note under the header about Roboflow / Kaggle models. */
+  modelHint?: string
+  onRunningChange?: (running: boolean) => void
+  onSessionStartedAtChange?: (startedAt: number | null) => void
+}
+
+export function BehaviorDetectionMonitor({
+  cameraId = "cam-01",
+  sceneTitle,
+  alertLocationLabel = "Campus",
+  modelHint = "Powered by a Roboflow-hosted YOLO model. Use Roboflow Universe or import Kaggle-trained weights into Roboflow Deploy; map labels in lib/behavior-class-map.ts if needed.",
+  onRunningChange,
+  onSessionStartedAtChange,
+}: BehaviorDetectionMonitorProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isRunning, setIsRunning] = useState(false)
@@ -106,7 +125,7 @@ export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: s
                   severity: a.severity,
                   timestamp: a.timestamp,
                   cameraId: a.cameraId,
-                  location: 'Campus', // can be mapped by cameraId later
+                  location: alertLocationLabel,
                   description: `${a.class} detected`,
                 }))]
                 // Keep recent 200
@@ -139,7 +158,7 @@ export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: s
     }, 33) // ~30 FPS
 
     return () => clearInterval(interval)
-  }, [isRunning, cameraId])
+  }, [isRunning, cameraId, alertLocationLabel])
 
   const startCamera = async () => {
     try {
@@ -156,6 +175,8 @@ export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: s
         setMode('unknown')
         setStatusMessage('')
         setIsRunning(true)
+        onRunningChange?.(true)
+        onSessionStartedAtChange?.(Date.now())
       }
     } catch (error) {
       console.error('[v0] Camera access error:', error)
@@ -169,10 +190,21 @@ export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: s
       setIsRunning(false)
       setDetections([])
       setAlerts([])
+      setStatusMessage('')
+      setMode('unknown')
       frameCountRef.current = 0
       fpsCountRef.current = 0
+      onRunningChange?.(false)
+      onSessionStartedAtChange?.(null)
     }
   }
+
+  useEffect(() => {
+    return () => {
+      onRunningChange?.(false)
+      onSessionStartedAtChange?.(null)
+    }
+  }, [onRunningChange, onSessionStartedAtChange])
 
   const drawDetections = () => {
     if (!canvasRef.current) return
@@ -220,9 +252,9 @@ export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: s
     <div className="space-y-4">
       <Card className="p-4 bg-slate-900">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2 flex-wrap">
             <Camera className="w-5 h-5" />
-            Behavior Detection Monitor - {cameraId}
+            {sceneTitle ? `${sceneTitle} · ${cameraId}` : `Behavior Detection Monitor · ${cameraId}`}
             {mode === 'roboflow' ? (
               <span className="ml-2 px-2 py-1 bg-green-700 text-green-100 text-xs rounded">
                 LIVE (ROBOFLOW)
@@ -285,6 +317,9 @@ export function BehaviorDetectionMonitor({ cameraId = 'cam-01' }: { cameraId?: s
             <div>Alerts: {alerts.length}</div>
             <div>Status: {isRunning ? 'Live' : 'Stopped'}</div>
           </div>
+          {modelHint ? (
+            <p className="text-xs text-gray-400 leading-relaxed border-t border-white/10 pt-2 mt-2">{modelHint}</p>
+          ) : null}
           {statusMessage ? (
             <div className="mt-2 text-xs text-gray-300/90">
               <span className="text-gray-400">Detector:</span> {statusMessage}

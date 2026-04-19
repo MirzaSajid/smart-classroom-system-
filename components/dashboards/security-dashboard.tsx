@@ -1,26 +1,74 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
-import { AlertTriangle, MapPin, Eye, AlertCircle, Video } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { AlertTriangle, MapPin, Eye, AlertCircle, Video, Building2, Shield } from "lucide-react"
 import { useState, useEffect } from "react"
 import { BehaviorDetectionMonitor } from "@/components/behavior/behavior-detection-monitor"
 import { BehaviorAlerts } from "@/components/behavior/behavior-alerts"
 import { BehaviorAnalytics } from "@/components/behavior/behavior-analytics"
+import { VapeDetectionMonitor } from "@/components/security/vape-detection-monitor"
+
+type SecurityIncident = {
+  id: string
+  type: string
+  location: string
+  severity: string
+  time: string
+  details: string
+  status: string
+}
+
+function normalizeSecurityIncident(raw: Record<string, unknown>): SecurityIncident {
+  const id = String(raw.id ?? `inc-${raw.timestamp ?? Date.now()}`)
+  const time =
+    typeof raw.time === "string"
+      ? raw.time
+      : typeof raw.timestamp === "string"
+        ? new Date(raw.timestamp).toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" })
+        : ""
+  return {
+    id,
+    type: String(raw.type ?? "Security alert"),
+    location: String(raw.location ?? "Campus"),
+    severity: String(raw.severity ?? "medium"),
+    time,
+    details: String(raw.details ?? raw.description ?? ""),
+    status: String(raw.status ?? "Active"),
+  }
+}
 
 export function SecurityDashboard() {
-  const [activeTab, setActiveTab] = useState<"overview" | "behavior">("behavior")
-  const [behaviorAlerts, setBehaviorAlerts] = useState<any[]>([])
+  const [activeTab, setActiveTab] = useState<"overview" | "behavior" | "vape">("behavior")
+  const [behaviorScene, setBehaviorScene] = useState<"classroom" | "campus">("campus")
+  const [isBehaviorCameraLive, setIsBehaviorCameraLive] = useState(false)
+  const [behaviorSessionStartedAt, setBehaviorSessionStartedAt] = useState<number | null>(null)
+  const [behaviorAlerts, setBehaviorAlerts] = useState<SecurityIncident[]>([])
+  const behaviorCameraId = behaviorScene === "classroom" ? "classroom-cam-01" : "campus-patrol-01"
 
-  // Load YOLOv8 behavior alerts in real-time
+  // Load behavior + vape incidents from localStorage (updated on detections)
   const loadAlerts = () => {
-    const stored = localStorage.getItem('behaviorAlerts')
+    const stored = localStorage.getItem("behaviorAlerts")
     if (stored) {
       try {
-        const alerts = JSON.parse(stored)
-        setBehaviorAlerts(alerts.slice(0, 10))
+        const parsed = JSON.parse(stored) as Record<string, unknown>[]
+        const scored = parsed.map((raw) => {
+          const t =
+            typeof raw.timestamp === "string"
+              ? new Date(raw.timestamp).getTime()
+              : typeof raw.time === "string"
+                ? Date.parse(raw.time)
+                : 0
+          return { raw, t: Number.isFinite(t) ? t : 0 }
+        })
+        scored.sort((a, b) => b.t - a.t)
+        const normalized = scored.map(({ raw }) => normalizeSecurityIncident(raw))
+        setBehaviorAlerts(normalized.slice(0, 50))
       } catch (e) {
-        console.error('[v0] Failed to load behavior alerts:', e)
+        console.error("[v0] Failed to load behavior alerts:", e)
       }
+    } else {
+      setBehaviorAlerts([])
     }
   }
 
@@ -31,7 +79,7 @@ export function SecurityDashboard() {
   }, [])
 
   // All data now comes from real sources - no demo data
-  const incidents = behaviorAlerts
+  const incidents: SecurityIncident[] = behaviorAlerts
   const cameras: any[] = []
 
   return (
@@ -67,6 +115,19 @@ export function SecurityDashboard() {
           <div className="flex items-center gap-2">
             <Video className="w-4 h-4" />
             Behavior Detection
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab("vape")}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === "vape"
+              ? "border-primary text-primary"
+              : "border-transparent text-foreground/60 hover:text-foreground"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            Vape Detection
           </div>
         </button>
       </div>
@@ -138,7 +199,7 @@ export function SecurityDashboard() {
                       incident.severity === "high" ? "bg-destructive/20 text-destructive" : "bg-accent/20 text-accent"
                     }`}
                   >
-                    {incident.severity.toUpperCase()}
+                    {String(incident.severity).toUpperCase()}
                   </span>
                   <p className="text-xs text-foreground/50 mt-1">{incident.time}</p>
                 </div>
@@ -178,15 +239,61 @@ export function SecurityDashboard() {
 
       {activeTab === "behavior" && (
         <div className="space-y-6">
+          <Card className="p-4 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={behaviorScene === "classroom" ? "default" : "outline"}
+                size="sm"
+                className="gap-2"
+                onClick={() => setBehaviorScene("classroom")}
+              >
+                <Building2 className="w-4 h-4" />
+                Classroom — mobile / devices
+              </Button>
+              <Button
+                type="button"
+                variant={behaviorScene === "campus" ? "default" : "outline"}
+                size="sm"
+                className="gap-2"
+                onClick={() => setBehaviorScene("campus")}
+              >
+                <Shield className="w-4 h-4" />
+                Campus — weapons / hazards
+              </Button>
+            </div>
+          </Card>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
-              <BehaviorDetectionMonitor cameraId="cam-01" />
+              <BehaviorDetectionMonitor
+                cameraId={behaviorCameraId}
+                sceneTitle={behaviorScene === "classroom" ? "Classroom monitoring" : "Campus security patrol"}
+                alertLocationLabel={behaviorScene === "classroom" ? "Classroom" : "Campus"}
+                onRunningChange={setIsBehaviorCameraLive}
+                onSessionStartedAtChange={setBehaviorSessionStartedAt}
+                modelHint={
+                  behaviorScene === "classroom"
+                    ? "Tune your Roboflow model for phones and handheld devices in class. Alerts are tagged as Classroom."
+                    : "Tune your Roboflow model for weapons and critical threats on campus grounds. Alerts are tagged as Campus."
+                }
+              />
             </div>
             <div>
-              <BehaviorAlerts />
+              <BehaviorAlerts
+                isLive={isBehaviorCameraLive}
+                cameraId={behaviorCameraId}
+                sessionStartedAt={behaviorSessionStartedAt}
+                excludeTypes={["Vape Detection"]}
+              />
             </div>
           </div>
           <BehaviorAnalytics />
+        </div>
+      )}
+
+      {activeTab === "vape" && (
+        <div className="space-y-6">
+          <VapeDetectionMonitor />
         </div>
       )}
     </div>

@@ -30,15 +30,16 @@ export interface BehaviorAlert {
   requiresAction: boolean
 }
 
-// Severity mapping for different detected behaviors
-const BEHAVIOR_SEVERITY_MAP: Record<string, 'critical' | 'high' | 'medium'> = {
-  'weapon': 'critical',
-  'fighting': 'critical',
-  'vaping': 'high',
-  'smoking': 'high',
-  'unauthorized_person': 'high',
-  'unauthorized_student': 'medium',
-  'phone_use': 'medium',
+// Severity mapping for different detected behaviors (aligned with yolov8-detect canonical classes)
+const BEHAVIOR_SEVERITY_MAP: Record<string, "critical" | "high" | "medium"> = {
+  weapon: "critical",
+  fighting: "critical",
+  vaping: "high",
+  smoking: "high",
+  unauthorized_person: "high",
+  unauthorized_student: "medium",
+  phone_use: "medium",
+  mobile_use: "medium",
 }
 
 // Client-side function that calls server endpoint (API key stays on server)

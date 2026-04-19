@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Navigation } from "@/components/navigation"
 import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
 import { TeacherPortal } from "@/components/dashboards/teacher-portal"
@@ -28,6 +28,25 @@ export default function Home() {
     localStorage.removeItem('currentUser')
     localStorage.removeItem('loginTime')
   }
+
+  // Keep the visible portal aligned with the signed-in account (e.g. admin must not land on student/teacher).
+  useEffect(() => {
+    if (!isLoggedIn) return
+    try {
+      const raw = localStorage.getItem("currentUser")
+      if (!raw) return
+      const signed = JSON.parse(raw)?.role as UserRole | undefined
+      if (signed === "admin" && (currentRole === "student" || currentRole === "teacher")) {
+        setCurrentRole("admin")
+        return
+      }
+      if (signed && signed !== "admin" && currentRole !== signed) {
+        setCurrentRole(signed)
+      }
+    } catch {
+      // ignore invalid stored user
+    }
+  }, [isLoggedIn, currentRole])
 
   const renderDashboard = () => {
     switch (currentRole) {
