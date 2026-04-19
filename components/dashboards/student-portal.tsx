@@ -22,6 +22,9 @@ import {
 } from "lucide-react"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { StudentFacialScanner } from "@/components/attendance/student-facial-scanner"
+import type { Announcement } from "@/components/admin/announcements-manager"
+import type { FeeInvoice } from "@/components/admin/fee-manager"
+import { Input } from "@/components/ui/input"
 
 type EnrolledCourse = {
   id: string
@@ -122,7 +125,11 @@ function isDateInSemester(d: Date, sem: SemesterWindow) {
   return t >= sem.start.getTime() && t <= sem.end.getTime()
 }
 
-export function StudentPortal() {
+export function StudentPortal({
+  activeSection = "overview",
+}: {
+  activeSection?: "overview" | "academic" | "fees"
+}) {
   const [studentData, setStudentData] = useState<any>(null)
   const [attendanceMetrics, setAttendanceMetrics] = useState<any[]>([])
   const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourse[]>([])
@@ -130,11 +137,20 @@ export function StudentPortal() {
   const [thisMonthAttendance, setThisMonthAttendance] = useState(0)
   const [classesTodayCount, setClassesTodayCount] = useState(0)
   const [currentUserId, setCurrentUserId] = useState<string>("")
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [feeInvoices, setFeeInvoices] = useState<FeeInvoice[]>([])
+  const [payDialogOpen, setPayDialogOpen] = useState(false)
+  const [payInvoiceId, setPayInvoiceId] = useState<string>("")
+  const [payAmount, setPayAmount] = useState<string>("")
+  const [paySlipFile, setPaySlipFile] = useState<File | null>(null)
 
   const [courseDialogOpen, setCourseDialogOpen] = useState(false)
   const [selectedCourse, setSelectedCourse] = useState<EnrolledCourse | null>(null)
   const [courseAttendanceRows, setCourseAttendanceRows] = useState<any[]>([])
   const [loadingCourseAttendance, setLoadingCourseAttendance] = useState(false)
+  const showAcademicSection = activeSection === "academic"
+  const showFeesSection = activeSection === "fees"
+  const showOverviewSections = activeSection === "overview"
 
   useEffect(() => {
     const currentUser = localStorage.getItem("currentUser")
@@ -147,6 +163,143 @@ export function StudentPortal() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    const load = () => {
+      try {
+        const raw = localStorage.getItem("announcements")
+        if (!raw) {
+          setAnnouncements([])
+          return
+        }
+        const parsed = JSON.parse(raw)
+        setAnnouncements(Array.isArray(parsed) ? parsed : [])
+      } catch {
+        setAnnouncements([])
+      }
+    }
+    load()
+    const onStorage = () => load()
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
+
+  useEffect(() => {
+    const load = () => {
+      try {
+        const raw = localStorage.getItem("feeInvoices")
+        if (!raw) {
+          setFeeInvoices([])
+          return
+        }
+        const parsed = JSON.parse(raw)
+        setFeeInvoices(Array.isArray(parsed) ? parsed : [])
+      } catch {
+        setFeeInvoices([])
+      }
+    }
+    load()
+    const onStorage = () => load()
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
+
+  const myInvoices = useMemo(() => {
+    if (!currentUserId) return []
+    return feeInvoices
+      .filter((i) => String(i.studentId) === String(currentUserId))
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  }, [feeInvoices, currentUserId])
+
+  const pendingInvoices = useMemo(() => myInvoices.filter((i) => i.status !== "paid"), [myInvoices])
+  const paidInvoices = useMemo(() => myInvoices.filter((i) => i.status === "paid"), [myInvoices])
+
+  const payInvoice = (invoiceId: string) => {
+    const inv = feeInvoices.find((i) => i.id === invoiceId)
+    if (!inv) return
+    setPayInvoiceId(invoiceId)
+    setPayAmount(String(inv.balance ?? inv.totalAmount ?? 0))
+    setPaySlipFile(null)
+    setPayDialogOpen(true)
+  }
+
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ""))
+      reader.onerror = () => reject(new Error("failed to read file"))
+      reader.readAsDataURL(file)
+    })
+
+  const confirmPayment = async () => {
+    const amt = Number(payAmount)
+    if (!Number.isFinite(amt) || amt <= 0 || !paySlipFile) return
+    if (paySlipFile.size > 3 * 1024 * 1024) {
+      alert("Slip file is too large. Please upload a file up to 3MB.")
+      return
+    }
+
+    let slipDataUrl = ""
+    try {
+      slipDataUrl = await fileToDataUrl(paySlipFile)
+    } catch {
+      alert("Could not read slip file. Please try again.")
+      return
+    }
+
+    const updated = feeInvoices.map((i) => {
+      if (i.id !== payInvoiceId) return i
+      const balance = Number(i.balance ?? Math.max(0, (i.totalAmount ?? 0) - (i.amountPaid ?? 0)))
+      const pay = Math.min(balance, Math.round(amt * 100) / 100)
+      const submission = {
+        id: `slip-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        amount: pay,
+        submittedAt: new Date().toISOString(),
+        slipName: paySlipFile.name,
+        slipDataUrl,
+        status: "pending" as const,
+      }
+      return {
+        ...i,
+        paymentSubmissions: [...(Array.isArray(i.paymentSubmissions) ? i.paymentSubmissions : []), submission],
+      }
+    })
+    setFeeInvoices(updated)
+    localStorage.setItem("feeInvoices", JSON.stringify(updated))
+    setPayDialogOpen(false)
+    setPayInvoiceId("")
+    setPayAmount("")
+    setPaySlipFile(null)
+  }
+
+  const downloadReceipt = (invoice: FeeInvoice) => {
+    const last = invoice.payments?.[invoice.payments.length - 1]
+    const html = `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Receipt ${invoice.id}</title></head>
+<body style="font-family: ui-sans-serif, system-ui; padding: 24px;">
+  <h2>SmartClass Payment Receipt</h2>
+  <p><strong>Receipt for:</strong> ${invoice.studentName} (${invoice.studentId})</p>
+  <p><strong>Invoice:</strong> ${invoice.title}</p>
+  <p><strong>Total:</strong> ${invoice.totalAmount}</p>
+  <p><strong>Paid:</strong> ${invoice.amountPaid}</p>
+  <p><strong>Balance:</strong> ${invoice.balance}</p>
+  <p><strong>Status:</strong> ${invoice.status}</p>
+  <hr/>
+  <p><strong>Last payment:</strong> ${last ? last.amount : 0} on ${last ? new Date(last.paidAt).toLocaleString() : "-"}</p>
+  <p style="color:#666; font-size: 12px;">Generated at ${new Date().toLocaleString()}</p>
+</body>
+</html>`
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `receipt-${invoice.studentId}-${invoice.id}.html`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
 
   const loadGradesAndCourses = useCallback(
     (parsed: any, currentStudent: any, gradesDataStr: string | null) => {
@@ -498,20 +651,143 @@ export function StudentPortal() {
   }, [reloadAdminAndGrades])
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-foreground mb-2">My Portal</h2>
-        <p className="text-foreground/60">
-          {studentData ? `Welcome back, ${studentData.name}` : "Your attendance and academic engagement"}
-        </p>
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground tracking-tight">My Portal</h2>
+          <p className="text-foreground/60">
+            {studentData ? `Welcome back, ${studentData.name}` : "Your attendance and academic engagement"}
+          </p>
+        </div>
+        <Badge variant="outline" className="bg-transparent">
+          {currentUserId ? `Student ID: ${currentUserId}` : "Not linked"}
+        </Badge>
       </div>
 
-      <div className="flex flex-col lg:flex-row lg:items-start gap-8">
-        <div className="flex-1 min-w-0 space-y-8">
-      <StudentFacialScanner />
+      <div className="space-y-8">
+        <div className="min-w-0 space-y-8">
+          {showFeesSection ? (
+            <Card id="fees-invoices" variant="glass" className="p-6">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Fees & invoices</p>
+              <Badge variant="outline" className="bg-transparent">
+                {myInvoices.length}
+              </Badge>
+            </div>
+            <div className="mt-3 space-y-2">
+              {myInvoices.length === 0 ? (
+                <p className="text-sm text-foreground/60">No invoices yet.</p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-foreground/70">Pending invoices</p>
+                    {pendingInvoices.length === 0 ? (
+                      <p className="text-xs text-foreground/60">No pending invoices.</p>
+                    ) : (
+                      pendingInvoices.slice(0, 6).map((i) => (
+                        <div
+                          key={i.id}
+                          className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-semibold text-foreground">{i.title}</p>
+                                <Badge variant="outline" className="bg-transparent text-[10px] h-5">
+                                  {i.status === "partial" ? "PARTIAL" : "UNPAID"}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-foreground/60 mt-1">
+                                Total: <span className="text-foreground font-medium">{i.totalAmount}</span> · Paid:{" "}
+                                <span className="text-foreground font-medium">{i.amountPaid}</span> · Balance:{" "}
+                                <span className="text-foreground font-medium">{i.balance}</span> · Due: {i.dueDate}
+                              </p>
+                              {(i.paymentSubmissions || []).some((s) => s.status === "pending") ? (
+                                <p className="text-[10px] text-amber-600 mt-2">Slip submitted. Waiting for admin verification.</p>
+                              ) : null}
+                            </div>
+                            <Button size="sm" className="rounded-xl" onClick={() => payInvoice(i.id)}>
+                              Pay
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        <Card className="p-6">
+                  <div className="space-y-2 pt-3">
+                    <p className="text-xs font-semibold text-foreground/70">Paid invoices</p>
+                    {paidInvoices.length === 0 ? (
+                      <p className="text-xs text-foreground/60">No paid invoices yet.</p>
+                    ) : (
+                      paidInvoices.slice(0, 6).map((i) => (
+                        <div
+                          key={i.id}
+                          className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-semibold text-foreground">{i.title}</p>
+                                <Badge className="text-[10px] h-5">PAID</Badge>
+                              </div>
+                              <p className="text-xs text-foreground/60 mt-1">
+                                Total: <span className="text-foreground font-medium">{i.totalAmount}</span> · Paid:{" "}
+                                <span className="text-foreground font-medium">{i.amountPaid}</span> · Due: {i.dueDate}
+                              </p>
+                              {i.payments?.length ? (
+                                <p className="text-[10px] text-foreground/50 mt-2">
+                                  Last payment: {new Date(i.payments[i.payments.length - 1].paidAt).toLocaleString()}
+                                </p>
+                              ) : null}
+                            </div>
+                            {i.payments?.length ? (
+                              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => downloadReceipt(i)}>
+                                Download receipt
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            </Card>
+          ) : null}
+
+          <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Pay fee</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="text-sm text-foreground/70">
+                  Enter amount and upload paid fee slip. Admin will verify and then mark this invoice as paid.
+                </p>
+                <Input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} inputMode="decimal" />
+                <Input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf"
+                  onChange={(e) => setPaySlipFile(e.target.files?.[0] || null)}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setPayDialogOpen(false)} className="rounded-xl">
+                    Cancel
+                  </Button>
+                  <Button onClick={confirmPayment} className="rounded-xl" disabled={!paySlipFile}>
+                    Submit slip
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+      {showOverviewSections ? <StudentFacialScanner /> : null}
+
+      {showOverviewSections ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <Card variant="glass" className="p-6">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <CheckCircle className="w-6 h-6 text-primary" />
@@ -522,7 +798,7 @@ export function StudentPortal() {
             </div>
           </div>
         </Card>
-        <Card className="p-6">
+        <Card variant="glass" className="p-6">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
               <Clock className="w-6 h-6 text-accent" />
@@ -533,7 +809,7 @@ export function StudentPortal() {
             </div>
           </div>
         </Card>
-        <Card className="p-6">
+        <Card variant="glass" className="p-6">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
               <CalendarRange className="w-6 h-6 text-accent" />
@@ -547,7 +823,7 @@ export function StudentPortal() {
             </div>
           </div>
         </Card>
-        <Card className="p-6">
+        <Card variant="glass" className="p-6">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <GraduationCap className="w-6 h-6 text-primary" />
@@ -561,7 +837,7 @@ export function StudentPortal() {
             </div>
           </div>
         </Card>
-        <Card className="p-6">
+        <Card variant="glass" className="p-6">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <AlertCircle className="w-6 h-6 text-primary" />
@@ -572,32 +848,11 @@ export function StudentPortal() {
             </div>
           </div>
         </Card>
-      </div>
+        </div>
+      ) : null}
 
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Attendance history (last 4 months)</h3>
-        {attendanceMetrics.length === 0 ? (
-          <p className="text-foreground/60 text-center py-8">No attendance records yet</p>
-        ) : (
-          <div className="flex items-end justify-between h-32 gap-2">
-            {attendanceMetrics.map((month, index) => (
-              <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                <div
-                  className="w-full bg-gradient-to-t from-primary to-primary rounded-t relative"
-                  style={{ height: `${Math.max(month.percentage, 5)}%` }}
-                >
-                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-semibold text-foreground">
-                    {month.percentage}%
-                  </span>
-                </div>
-                <p className="text-xs text-foreground/60">{month.month}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <Card className="p-6">
+      {showOverviewSections ? (
+        <Card variant="glass" className="p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4">My enrolled courses</h3>
         <p className="text-sm text-foreground/60 mb-4">
           Schedule comes from admin class data. Click a course to see attendance by date and assessment marks.
@@ -611,7 +866,7 @@ export function StudentPortal() {
                 key={cls.id}
                 type="button"
                 onClick={() => openCourseDetail(cls)}
-                className="w-full flex items-center justify-between gap-4 p-4 rounded-lg bg-card/50 border border-border hover:bg-card hover:border-primary/30 transition-colors text-left"
+                className="w-full flex items-center justify-between gap-4 p-4 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)] backdrop-blur-xl hover:bg-[var(--glass-bg-strong)] hover:border-primary/25 transition-colors text-left"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-foreground">{cls.name}</p>
@@ -629,15 +884,77 @@ export function StudentPortal() {
             ))}
           </div>
         )}
-      </Card>
+        </Card>
+      ) : null}
+
+      {showOverviewSections ? (
+        <Card variant="glass" className="p-6">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">Announcements</p>
+          <Badge variant="outline" className="bg-transparent">
+            {announcements.filter((a) => a.audience === "all" || a.audience === "students").length}
+          </Badge>
+        </div>
+        <div className="mt-3 space-y-2">
+          {announcements
+            .filter((a) => a.audience === "all" || a.audience === "students")
+            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+            .slice(0, 3)
+            .map((a) => (
+              <div
+                key={a.id}
+                className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl p-4 hover:bg-[var(--glass-bg-strong)] transition-colors"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-foreground">{a.title}</p>
+                  <Badge variant="outline" className="bg-transparent text-[10px] h-5">
+                    {a.category}
+                  </Badge>
+                </div>
+                <p className="text-sm text-foreground/70 mt-1 whitespace-pre-wrap">{a.message}</p>
+                <p className="text-xs text-foreground/50 mt-2">{new Date(a.createdAt).toLocaleString()}</p>
+              </div>
+            ))}
+          {announcements.filter((a) => a.audience === "all" || a.audience === "students").length === 0 ? (
+            <p className="text-sm text-foreground/60">No announcements yet.</p>
+          ) : null}
+        </div>
+        </Card>
+      ) : null}
+
+      {showOverviewSections ? (
+        <Card variant="glass" className="p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">Attendance history (last 4 months)</h3>
+        {attendanceMetrics.length === 0 ? (
+          <p className="text-foreground/60 text-center py-8">No attendance records yet</p>
+        ) : (
+          <div className="flex items-end justify-between h-32 gap-2">
+            {attendanceMetrics.map((month, index) => (
+              <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                <div
+                  className="w-full bg-gradient-to-t from-primary to-primary rounded-t relative transition-transform hover:scale-[1.02]"
+                  style={{ height: `${Math.max(month.percentage, 5)}%` }}
+                >
+                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-semibold text-foreground">
+                    {month.percentage}%
+                  </span>
+                </div>
+                <p className="text-xs text-foreground/60">{month.month}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        </Card>
+      ) : null}
 
         </div>
 
-        <aside
-          aria-label="Academic performance"
-          className="w-full lg:w-80 xl:w-96 shrink-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:border-l lg:border-border lg:pl-6 space-y-0"
+        {showAcademicSection ? (
+          <Card
+          id="academic-performance"
+          variant="glass"
+          className="p-5 lg:p-5 border-[var(--glass-border)] shadow-sm lg:shadow-sm"
         >
-          <Card className="p-5 lg:p-5 border-border/80 shadow-sm lg:shadow-sm">
             <h3 className="text-base font-semibold text-foreground mb-1">Academic performance</h3>
             <p className="text-xs text-foreground/60 mb-4 leading-relaxed">
               From admin data only.{" "}
@@ -668,7 +985,7 @@ export function StudentPortal() {
                   <div>
                     <p className="text-xs font-semibold text-foreground mb-2">GPA & CGPA</p>
                     <div className="grid grid-cols-1 gap-3">
-                      <div className="rounded-lg border border-border bg-card/50 p-3 space-y-1.5">
+                      <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl p-3 space-y-1.5">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <p className="text-xs font-medium text-foreground">Semester GPA</p>
                           <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
@@ -693,7 +1010,7 @@ export function StudentPortal() {
                         )}
                       </div>
 
-                      <div className="rounded-lg border border-border bg-card/50 p-3 space-y-1.5">
+                      <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl p-3 space-y-1.5">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <p className="text-xs font-medium text-foreground">CGPA</p>
                           <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
@@ -721,35 +1038,32 @@ export function StudentPortal() {
                 <p className="text-xs text-foreground/60">No assessment marks for your courses yet.</p>
               )}
 
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="px-3 py-2 bg-muted/40 border-b border-border">
+              <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-[var(--glass-border)] bg-[var(--glass-bg-strong)]">
                   <p className="text-xs font-semibold text-foreground">4.0 grade scale</p>
                   <p className="text-[10px] text-foreground/55 mt-0.5">Course % → points</p>
                 </div>
-                <div className="overflow-x-auto max-h-48 overflow-y-auto">
-                  <table className="w-full text-[11px]">
-                    <thead>
-                      <tr className="border-b border-border text-left text-foreground/65 sticky top-0 bg-muted/40">
-                        <th className="py-1.5 px-2 font-medium">%</th>
-                        <th className="py-1.5 px-2 font-medium">Pts</th>
-                        <th className="py-1.5 px-2 font-medium">Grade</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {GPA_GRADE_CATEGORIES.map((row) => (
-                        <tr key={row.range} className="border-b border-border/50 last:border-0">
-                          <td className="py-1.5 px-2 text-foreground">{row.range}</td>
-                          <td className="py-1.5 px-2 font-medium text-primary tabular-nums">{row.points}</td>
-                          <td className="py-1.5 px-2 text-foreground/80">{row.letter}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="max-h-56 overflow-y-auto p-2 space-y-1">
+                  {GPA_GRADE_CATEGORIES.map((row) => (
+                    <div
+                      key={row.range}
+                      className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-lg border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2.5 py-2 hover:bg-[var(--glass-bg-strong)] transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium text-foreground truncate">{row.range}</p>
+                        <p className="text-[10px] text-foreground/55 truncate">{row.letter}</p>
+                      </div>
+                      <Badge variant="outline" className="bg-transparent text-[10px] h-5 px-2 tabular-nums">
+                        {row.points}
+                      </Badge>
+                      <span className="text-[10px] text-foreground/60">pts</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </Card>
-        </aside>
+        ) : null}
       </div>
 
       <Dialog

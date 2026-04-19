@@ -250,21 +250,21 @@ export function BehaviorDetectionMonitor({
 
   return (
     <div className="space-y-4">
-      <Card className="p-4 bg-slate-900">
+      <Card variant="glass" className="p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2 flex-wrap">
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 flex-wrap">
             <Camera className="w-5 h-5" />
             {sceneTitle ? `${sceneTitle} · ${cameraId}` : `Behavior Detection Monitor · ${cameraId}`}
             {mode === 'roboflow' ? (
-              <span className="ml-2 px-2 py-1 bg-green-700 text-green-100 text-xs rounded">
+              <span className="ml-2 px-2 py-1 bg-green-600/20 text-green-700 dark:text-green-200 text-xs rounded border border-green-600/20">
                 LIVE (ROBOFLOW)
               </span>
             ) : mode === 'disabled' ? (
-              <span className="ml-2 px-2 py-1 bg-red-700 text-red-100 text-xs rounded">
+              <span className="ml-2 px-2 py-1 bg-destructive/15 text-destructive text-xs rounded border border-destructive/25">
                 DISABLED
               </span>
             ) : mode === 'error' ? (
-              <span className="ml-2 px-2 py-1 bg-red-700 text-red-100 text-xs rounded">
+              <span className="ml-2 px-2 py-1 bg-destructive/15 text-destructive text-xs rounded border border-destructive/25">
                 ERROR
               </span>
             ) : null}
@@ -293,7 +293,7 @@ export function BehaviorDetectionMonitor({
         </div>
 
         <div className="space-y-2">
-          <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+          <div className="relative bg-black/70 rounded-xl overflow-hidden aspect-video border border-[var(--glass-border)]">
             <video
               ref={videoRef}
               autoPlay
@@ -307,22 +307,24 @@ export function BehaviorDetectionMonitor({
               width={640}
               height={480}
             />
-            <div className="absolute top-2 left-2 bg-black/70 px-3 py-1 rounded text-xs text-green-400 font-mono">
+            <div className="absolute top-2 left-2 bg-black/60 px-3 py-1 rounded-lg text-xs text-emerald-200 font-mono border border-white/10">
               FPS: {fps}
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs text-gray-300">
+          <div className="grid grid-cols-3 gap-2 text-xs text-foreground/70">
             <div>Detections: {detections.length}</div>
             <div>Alerts: {alerts.length}</div>
             <div>Status: {isRunning ? 'Live' : 'Stopped'}</div>
           </div>
           {modelHint ? (
-            <p className="text-xs text-gray-400 leading-relaxed border-t border-white/10 pt-2 mt-2">{modelHint}</p>
+            <p className="text-xs text-foreground/60 leading-relaxed border-t border-[var(--glass-border)] pt-2 mt-2">
+              {modelHint}
+            </p>
           ) : null}
           {statusMessage ? (
-            <div className="mt-2 text-xs text-gray-300/90">
-              <span className="text-gray-400">Detector:</span> {statusMessage}
+            <div className="mt-2 text-xs text-foreground/70">
+              <span className="text-foreground/50">Detector:</span> {statusMessage}
             </div>
           ) : null}
         </div>
@@ -330,18 +332,18 @@ export function BehaviorDetectionMonitor({
 
       {/* Active Detections */}
       {detections.length > 0 && (
-        <Card className="p-4 bg-slate-900">
-          <h4 className="font-semibold text-white mb-3">Active Detections</h4>
+        <Card variant="glass" className="p-4">
+          <h4 className="font-semibold text-foreground mb-3">Active Detections</h4>
           <div className="space-y-2 max-h-40 overflow-y-auto">
             {detections.map((det, idx) => (
               <div
                 key={idx}
                 className={`p-2 rounded text-xs ${
                   det.severity === 'critical'
-                    ? 'bg-red-900/30 border border-red-500'
+                    ? 'bg-destructive/15 border border-destructive/35 text-destructive'
                     : det.severity === 'high'
-                    ? 'bg-orange-900/30 border border-orange-500'
-                    : 'bg-yellow-900/30 border border-yellow-600'
+                    ? 'bg-orange-500/10 border border-orange-500/30 text-orange-700 dark:text-orange-200'
+                    : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-800 dark:text-yellow-200'
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -358,8 +360,8 @@ export function BehaviorDetectionMonitor({
 
       {/* Recent Alerts */}
       {alerts.length > 0 && (
-        <Card className="p-4 bg-red-900/10 border border-red-500/30">
-          <h4 className="font-semibold text-red-400 mb-3 flex items-center gap-2">
+        <Card variant="glass" className="p-4 border border-destructive/20 bg-destructive/5">
+          <h4 className="font-semibold text-destructive mb-3 flex items-center gap-2">
             <AlertCircle className="w-4 h-4" />
             Recent Alerts
           </h4>
@@ -367,11 +369,11 @@ export function BehaviorDetectionMonitor({
             {alerts.map((alert) => (
               <div
                 key={alert.id}
-                className="p-2 bg-red-900/20 border border-red-500/50 rounded text-xs text-red-200"
+                className="p-2 bg-destructive/10 border border-destructive/25 rounded-lg text-xs text-foreground"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{alert.class}</span>
-                  <span className="text-right text-red-300">
+                  <span className="text-right text-foreground/60">
                     {new Date(alert.timestamp).toLocaleTimeString()}
                   </span>
                 </div>

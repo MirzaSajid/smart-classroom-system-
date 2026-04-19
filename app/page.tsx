@@ -10,13 +10,16 @@ import { LoginPage } from "@/components/login-page"
 import { LocalStorageSync } from "@/components/persistence/local-storage-sync"
 
 type UserRole = "admin" | "teacher" | "security" | "student"
+type StudentSection = "overview" | "academic" | "fees"
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [currentRole, setCurrentRole] = useState<UserRole>("admin")
+  const [studentSection, setStudentSection] = useState<StudentSection>("overview")
 
   const handleLogin = (role: UserRole) => {
     setCurrentRole(role)
+    setStudentSection("overview")
     setIsLoggedIn(true)
     // Store login time for session management
     localStorage.setItem('loginTime', new Date().toISOString())
@@ -25,6 +28,7 @@ export default function Home() {
   const handleLogout = () => {
     setIsLoggedIn(false)
     setCurrentRole("admin")
+    setStudentSection("overview")
     localStorage.removeItem('currentUser')
     localStorage.removeItem('loginTime')
   }
@@ -48,6 +52,11 @@ export default function Home() {
     }
   }, [isLoggedIn, currentRole])
 
+  const handleRoleChange = (role: UserRole) => {
+    setCurrentRole(role)
+    if (role !== "student") setStudentSection("overview")
+  }
+
   const renderDashboard = () => {
     switch (currentRole) {
       case "admin":
@@ -57,7 +66,7 @@ export default function Home() {
       case "security":
         return <SecurityDashboard />
       case "student":
-        return <StudentPortal />
+        return <StudentPortal activeSection={studentSection} />
       default:
         return <AdminDashboard />
     }
@@ -75,9 +84,17 @@ export default function Home() {
   return (
     <>
       <LocalStorageSync />
-      <div className="flex h-screen bg-background">
-        <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} onLogout={handleLogout} />
-        <main className="flex-1 overflow-auto">{renderDashboard()}</main>
+      <div className="flex h-svh overflow-hidden bg-gradient-to-br from-background via-background to-primary/10">
+        <Navigation
+          currentRole={currentRole}
+          onRoleChange={handleRoleChange}
+          onLogout={handleLogout}
+          activeStudentSection={studentSection}
+          onStudentSectionChange={setStudentSection}
+        />
+        <main className="flex-1 overflow-auto">
+          <div className="p-6 lg:p-8">{renderDashboard()}</div>
+        </main>
       </div>
     </>
   )

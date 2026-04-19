@@ -114,13 +114,13 @@ export function BehaviorAlerts({
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical':
-        return 'bg-red-900/20 border-red-500/50 text-red-200'
+        return 'bg-destructive/10 border-destructive/25 text-destructive'
       case 'high':
-        return 'bg-orange-900/20 border-orange-500/50 text-orange-200'
+        return 'bg-orange-500/10 border-orange-500/25 text-orange-700 dark:text-orange-200'
       case 'medium':
-        return 'bg-yellow-900/20 border-yellow-500/50 text-yellow-200'
+        return 'bg-yellow-500/10 border-yellow-500/25 text-yellow-800 dark:text-yellow-200'
       default:
-        return 'bg-blue-900/20 border-blue-500/50 text-blue-200'
+        return 'bg-primary/10 border-primary/20 text-primary'
     }
   }
 
@@ -134,7 +134,7 @@ export function BehaviorAlerts({
       {/* Toast Notification */}
       {notification && (
         <div
-          className={`fixed top-4 right-4 p-4 rounded-lg border shadow-lg animate-in slide-in-from-right max-w-md ${getSeverityColor(
+          className={`fixed top-4 right-4 p-4 rounded-2xl border shadow-lg backdrop-blur-2xl animate-in slide-in-from-right max-w-md bg-[var(--glass-bg-strong)] border-[var(--glass-border-strong)] ${getSeverityColor(
             notification.severity
           )}`}
         >
@@ -143,7 +143,7 @@ export function BehaviorAlerts({
               {getSeverityIcon(notification.severity)}
               <div>
                 <h4 className="font-bold">{notification.type} Detected</h4>
-                <p className="text-sm opacity-90">{notification.description}</p>
+                <p className="text-sm text-foreground/80">{notification.description}</p>
                 <div className="flex items-center gap-2 text-xs mt-2 opacity-75">
                   <MapPin className="w-3 h-3" />
                   {notification.location}
@@ -152,7 +152,7 @@ export function BehaviorAlerts({
             </div>
             <button
               onClick={() => setNotification(null)}
-              className="opacity-50 hover:opacity-100"
+              className="opacity-60 hover:opacity-100 transition-opacity"
             >
               <X className="w-4 h-4" />
             </button>
@@ -161,17 +161,17 @@ export function BehaviorAlerts({
       )}
 
       {/* Alerts Summary */}
-      <Card className="p-4 bg-slate-900">
+      <Card variant="glass" className="p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <Bell className="w-5 h-5" />
             Real-Time Behavior Alerts
           </h3>
           <div className="flex gap-2 text-sm">
-            <span className="px-3 py-1 bg-red-500/20 text-red-300 rounded-full">
+            <span className="px-3 py-1 bg-destructive/10 text-destructive rounded-full border border-destructive/20">
               Critical: {alerts.filter((a) => a.severity === 'critical').length}
             </span>
-            <span className="px-3 py-1 bg-orange-500/20 text-orange-300 rounded-full">
+            <span className="px-3 py-1 bg-orange-500/10 text-orange-700 dark:text-orange-200 rounded-full border border-orange-500/20">
               High: {alerts.filter((a) => a.severity === 'high').length}
             </span>
           </div>

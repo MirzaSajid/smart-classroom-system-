@@ -1,13 +1,32 @@
 import * as React from 'react'
+import { cva, type VariantProps } from 'class-variance-authority'
 
 import { cn } from '@/lib/utils'
 
-function Card({ className, ...props }: React.ComponentProps<'div'>) {
+const cardVariants = cva(
+  'text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm',
+  {
+    variants: {
+      variant: {
+        default: 'bg-card border-border',
+        glass:
+          'bg-[var(--glass-bg)] border-[var(--glass-border)] backdrop-blur-xl shadow-[0_1px_0_rgba(255,255,255,0.12)_inset,0_10px_30px_rgba(0,0,0,0.08)] dark:shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_10px_30px_rgba(0,0,0,0.35)]',
+        glassElevated:
+          'bg-[var(--glass-bg-strong)] border-[var(--glass-border-strong)] backdrop-blur-2xl shadow-[0_1px_0_rgba(255,255,255,0.14)_inset,0_18px_48px_rgba(0,0,0,0.12)] dark:shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_18px_48px_rgba(0,0,0,0.45)]',
+      },
+    },
+    defaultVariants: { variant: 'default' },
+  },
+)
+
+type CardProps = React.ComponentProps<'div'> & VariantProps<typeof cardVariants>
+
+function Card({ className, variant, ...props }: CardProps) {
   return (
     <div
       data-slot="card"
       className={cn(
-        'bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm',
+        cardVariants({ variant }),
         className,
       )}
       {...props}
@@ -89,4 +108,5 @@ export {
   CardAction,
   CardDescription,
   CardContent,
+  cardVariants,
 }

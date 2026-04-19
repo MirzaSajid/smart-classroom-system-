@@ -1,13 +1,16 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AlertTriangle, MapPin, Eye, AlertCircle, Video, Building2, Shield } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { BehaviorDetectionMonitor } from "@/components/behavior/behavior-detection-monitor"
 import { BehaviorAlerts } from "@/components/behavior/behavior-alerts"
 import { BehaviorAnalytics } from "@/components/behavior/behavior-analytics"
-import { VapeDetectionMonitor } from "@/components/security/vape-detection-monitor"
+import { VapeDetectionMonitor } from "../security/vape-detection-monitor"
 
 type SecurityIncident = {
   id: string
@@ -45,6 +48,9 @@ export function SecurityDashboard() {
   const [behaviorSessionStartedAt, setBehaviorSessionStartedAt] = useState<number | null>(null)
   const [behaviorAlerts, setBehaviorAlerts] = useState<SecurityIncident[]>([])
   const behaviorCameraId = behaviorScene === "classroom" ? "classroom-cam-01" : "campus-patrol-01"
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "monitoring">("all")
+  const [severityFilter, setSeverityFilter] = useState<"all" | "critical" | "high" | "medium" | "low">("all")
+  const [query, setQuery] = useState("")
 
   // Load behavior + vape incidents from localStorage (updated on detections)
   const loadAlerts = () => {
@@ -82,170 +88,245 @@ export function SecurityDashboard() {
   const incidents: SecurityIncident[] = behaviorAlerts
   const cameras: any[] = []
 
+  const filteredIncidents = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return incidents.filter((i) => {
+      const statusOk =
+        statusFilter === "all" ? true : statusFilter === "active" ? i.status === "Active" : i.status === "Monitoring"
+      const severityOk = severityFilter === "all" ? true : String(i.severity).toLowerCase() === severityFilter
+      const queryOk =
+        !q ||
+        `${i.type} ${i.location} ${i.details} ${i.status} ${i.time}`.toLowerCase().includes(q)
+      return statusOk && severityOk && queryOk
+    })
+  }, [incidents, query, severityFilter, statusFilter])
+
+  const counts = useMemo(() => {
+    const active = incidents.filter((i) => i.status === "Active").length
+    const monitoring = incidents.filter((i) => i.status === "Monitoring").length
+    const total = incidents.length
+    return { active, monitoring, total }
+  }, [incidents])
+
+  const jumpToIncidents = (nextStatus: typeof statusFilter, nextSeverity: typeof severityFilter = "all") => {
+    setStatusFilter(nextStatus)
+    setSeverityFilter(nextSeverity)
+    setActiveTab("overview")
+  }
+
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold text-foreground mb-2">Security Dashboard</h2>
-        <p className="text-foreground/60">Real-time campus security monitoring and incident tracking</p>
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground tracking-tight">Security Dashboard</h2>
+          <p className="text-foreground/60">Real-time campus monitoring and incident tracking</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="bg-transparent">
+            Incidents: {counts.total}
+          </Badge>
+          <Badge variant="outline" className="bg-transparent">
+            Active: {counts.active}
+          </Badge>
+        </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-border">
-        <button
-          onClick={() => setActiveTab("overview")}
-          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-            activeTab === "overview"
-              ? "border-primary text-primary"
-              : "border-transparent text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          <div className="flex items-center gap-2">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-4">
+        <TabsList className="bg-[var(--glass-bg)] border border-[var(--glass-border)] backdrop-blur-2xl">
+          <TabsTrigger value="overview" className="gap-2">
             <Eye className="w-4 h-4" />
-            Security Overview
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab("behavior")}
-          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-            activeTab === "behavior"
-              ? "border-primary text-primary"
-              : "border-transparent text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          <div className="flex items-center gap-2">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="behavior" className="gap-2">
             <Video className="w-4 h-4" />
-            Behavior Detection
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab("vape")}
-          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-            activeTab === "vape"
-              ? "border-primary text-primary"
-              : "border-transparent text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          <div className="flex items-center gap-2">
+            Behavior
+          </TabsTrigger>
+          <TabsTrigger value="vape" className="gap-2">
             <AlertTriangle className="w-4 h-4" />
-            Vape Detection
-          </div>
-        </button>
-      </div>
+            Vape
+          </TabsTrigger>
+        </TabsList>
 
-      {activeTab === "overview" && (
-        <>
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-foreground/60">Active Incidents</p>
-              <p className="text-2xl font-bold text-destructive">{incidents.filter((i) => i.status === "Active").length}</p>
-            </div>
-            <AlertCircle className="w-8 h-8 text-destructive/40" />
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-foreground/60">Monitoring</p>
-              <p className="text-2xl font-bold text-accent">{incidents.filter((i) => i.status === "Monitoring").length}</p>
-            </div>
-            <Eye className="w-8 h-8 text-accent/40" />
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-foreground/60">Total Incidents</p>
-              <p className="text-2xl font-bold text-primary">{incidents.length}</p>
-            </div>
-            <AlertTriangle className="w-8 h-8 text-primary/40" />
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-foreground/60">Cameras Online</p>
-              <p className="text-2xl font-bold text-foreground">{cameras.filter((c) => c.status === "online").length}/{cameras.length}</p>
-            </div>
-            <MapPin className="w-8 h-8 text-foreground/40" />
-          </div>
-        </Card>
-      </div>
-
-      {/* Incidents */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Active Incidents</h3>
-        <div className="space-y-4">
-          {incidents.map((incident) => (
-            <div
-              key={incident.id}
-              className={`p-4 rounded-lg border ${
-                incident.severity === "high" ? "bg-destructive/5 border-destructive/30" : "bg-accent/5 border-accent/30"
-              }`}
+        <TabsContent value="overview" className="space-y-6 animate-in fade-in-0">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card
+              variant="glass"
+              className="p-6 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => jumpToIncidents("active")}
+              role="button"
             >
-              <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-semibold text-foreground">{incident.type}</p>
-                  <p className="text-sm text-foreground/60 flex items-center gap-1 mt-1">
-                    <MapPin className="w-4 h-4" />
-                    {incident.location}
+                  <p className="text-sm text-foreground/60">Active Incidents</p>
+                  <p className="text-2xl font-bold text-destructive">{counts.active}</p>
+                </div>
+                <AlertCircle className="w-8 h-8 text-destructive/40" />
+              </div>
+            </Card>
+            <Card
+              variant="glass"
+              className="p-6 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => jumpToIncidents("monitoring")}
+              role="button"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-foreground/60">Monitoring</p>
+                  <p className="text-2xl font-bold text-accent">{counts.monitoring}</p>
+                </div>
+                <Eye className="w-8 h-8 text-accent/40" />
+              </div>
+            </Card>
+            <Card
+              variant="glass"
+              className="p-6 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => jumpToIncidents("all")}
+              role="button"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-foreground/60">Total Incidents</p>
+                  <p className="text-2xl font-bold text-primary">{counts.total}</p>
+                </div>
+                <AlertTriangle className="w-8 h-8 text-primary/40" />
+              </div>
+            </Card>
+            <Card variant="glass" className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-foreground/60">Cameras Online</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {cameras.filter((c) => c.status === "online").length}/{cameras.length}
                   </p>
                 </div>
-                <div className="text-right">
-                  <span
-                    className={`text-xs font-medium px-2 py-1 rounded ${
-                      incident.severity === "high" ? "bg-destructive/20 text-destructive" : "bg-accent/20 text-accent"
-                    }`}
-                  >
-                    {String(incident.severity).toUpperCase()}
-                  </span>
-                  <p className="text-xs text-foreground/50 mt-1">{incident.time}</p>
-                </div>
+                <MapPin className="w-8 h-8 text-foreground/40" />
               </div>
-              <p className="text-sm text-foreground/70">{incident.details}</p>
-              <div className="flex items-center gap-2 mt-3">
-                <span className="inline-block w-2 h-2 rounded-full bg-accent"></span>
-                <p className="text-xs text-foreground/60">{incident.status}</p>
+            </Card>
+          </div>
+
+          <Card variant="glass" className="p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Incidents</h3>
+                <p className="text-sm text-foreground/60">Search, filter, and drill down into events.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search incidents…"
+                  className="w-64 bg-[var(--glass-bg)] border-[var(--glass-border)]"
+                />
+                <Button
+                  size="sm"
+                  variant={statusFilter === "all" ? "default" : "outline"}
+                  className="rounded-xl"
+                  onClick={() => setStatusFilter("all")}
+                >
+                  All
+                </Button>
+                <Button
+                  size="sm"
+                  variant={statusFilter === "active" ? "default" : "outline"}
+                  className="rounded-xl"
+                  onClick={() => setStatusFilter("active")}
+                >
+                  Active
+                </Button>
+                <Button
+                  size="sm"
+                  variant={statusFilter === "monitoring" ? "default" : "outline"}
+                  className="rounded-xl"
+                  onClick={() => setStatusFilter("monitoring")}
+                >
+                  Monitoring
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl"
+                  onClick={() => {
+                    setQuery("")
+                    setStatusFilter("all")
+                    setSeverityFilter("all")
+                  }}
+                >
+                  Reset
+                </Button>
               </div>
             </div>
-          ))}
-        </div>
-      </Card>
 
-      {/* Camera Feed Status */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Camera Feed Status</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {cameras.map((camera) => (
-            <div key={camera.id} className="p-4 rounded-lg bg-card/50 border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-medium text-foreground">{camera.name}</p>
-                <div
-                  className={`w-2 h-2 rounded-full ${camera.status === "online" ? "bg-primary" : "bg-destructive"}`}
-                ></div>
-              </div>
-              <p className="text-sm text-foreground/60 capitalize">{camera.status}</p>
-              {camera.incidents > 0 && (
-                <p className="text-xs text-accent mt-2">{camera.incidents} incident(s) recorded</p>
+            <div className="flex flex-wrap gap-2">
+              {(["all", "critical", "high", "medium", "low"] as const).map((sev) => (
+                <Button
+                  key={sev}
+                  size="sm"
+                  variant={severityFilter === sev ? "default" : "outline"}
+                  className="rounded-xl"
+                  onClick={() => setSeverityFilter(sev)}
+                >
+                  {sev === "all" ? "All severities" : sev.toUpperCase()}
+                </Button>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              {filteredIncidents.length === 0 ? (
+                <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-6 text-sm text-foreground/60">
+                  No incidents match your filters.
+                </div>
+              ) : (
+                filteredIncidents.map((incident) => {
+                  const sev = String(incident.severity).toLowerCase()
+                  const sevStyle =
+                    sev === "critical"
+                      ? "border-destructive/35 bg-destructive/10"
+                      : sev === "high"
+                        ? "border-destructive/20 bg-destructive/5"
+                        : "border-[var(--glass-border)] bg-[var(--glass-bg)]"
+                  return (
+                    <div
+                      key={incident.id}
+                      className={`p-4 rounded-xl border backdrop-blur-xl transition-shadow hover:shadow-md ${sevStyle}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground truncate">{incident.type}</p>
+                          <p className="text-sm text-foreground/60 flex items-center gap-1 mt-1">
+                            <MapPin className="w-4 h-4" />
+                            <span className="truncate">{incident.location}</span>
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-xs font-medium px-2 py-1 rounded bg-black/5 dark:bg-white/5">
+                            {String(incident.severity).toUpperCase()}
+                          </span>
+                          <p className="text-xs text-foreground/50 mt-1">{incident.time}</p>
+                        </div>
+                      </div>
+                      {incident.details ? (
+                        <p className="text-sm text-foreground/70 mt-3">{incident.details}</p>
+                      ) : null}
+                      <div className="flex items-center gap-2 mt-3">
+                        <span className="inline-block w-2 h-2 rounded-full bg-accent"></span>
+                        <p className="text-xs text-foreground/60">{incident.status}</p>
+                      </div>
+                    </div>
+                  )
+                })
               )}
             </div>
-          ))}
-        </div>
-      </Card>
-        </>
-      )}
+          </Card>
+        </TabsContent>
 
-      {activeTab === "behavior" && (
-        <div className="space-y-6">
-          <Card className="p-4 space-y-3">
+        <TabsContent value="behavior" className="space-y-6 animate-in fade-in-0">
+          <Card variant="glass" className="p-4">
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant={behaviorScene === "classroom" ? "default" : "outline"}
                 size="sm"
-                className="gap-2"
+                className="gap-2 rounded-xl"
                 onClick={() => setBehaviorScene("classroom")}
               >
                 <Building2 className="w-4 h-4" />
@@ -255,14 +336,23 @@ export function SecurityDashboard() {
                 type="button"
                 variant={behaviorScene === "campus" ? "default" : "outline"}
                 size="sm"
-                className="gap-2"
+                className="gap-2 rounded-xl"
                 onClick={() => setBehaviorScene("campus")}
               >
                 <Shield className="w-4 h-4" />
                 Campus — weapons / hazards
               </Button>
+              <div className="ml-auto flex items-center gap-2">
+                <Badge variant="outline" className="bg-transparent">
+                  Camera: {behaviorCameraId}
+                </Badge>
+                <Badge variant={isBehaviorCameraLive ? "default" : "outline"} className="bg-transparent">
+                  {isBehaviorCameraLive ? "LIVE" : "OFF"}
+                </Badge>
+              </div>
             </div>
           </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
               <BehaviorDetectionMonitor
@@ -288,14 +378,12 @@ export function SecurityDashboard() {
             </div>
           </div>
           <BehaviorAnalytics />
-        </div>
-      )}
+        </TabsContent>
 
-      {activeTab === "vape" && (
-        <div className="space-y-6">
+        <TabsContent value="vape" className="space-y-6 animate-in fade-in-0">
           <VapeDetectionMonitor />
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

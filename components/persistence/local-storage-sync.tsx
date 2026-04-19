@@ -9,6 +9,8 @@ const MANAGED_KEYS = new Set([
   "studentDataset",
   "gradesData",
   "behaviorAlerts",
+  "announcements",
+  "feeInvoices",
   "currentClass",
   "currentUser",
   "loginTime",
