@@ -21,6 +21,7 @@ export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "settings" | "announcements" | "fees">("dashboard")
   const [attendanceStats, setAttendanceStats] = useState({ present: 0, absent: 0 })
   const [studentQuery, setStudentQuery] = useState("")
+  const [focusedInvoiceId, setFocusedInvoiceId] = useState("")
 
   useEffect(() => {
     const stored = localStorage.getItem('adminData')
@@ -58,6 +59,19 @@ export function AdminDashboard() {
     const interval = setInterval(loadAttendance, 3000)
     return () => clearInterval(interval)
   }, [adminData])
+
+  useEffect(() => {
+    const openRequestedInvoice = () => {
+      const tab = localStorage.getItem("openAdminTab")
+      const invoiceId = localStorage.getItem("openFeeInvoiceId")
+      if (tab === "fees") setActiveTab("fees")
+      if (invoiceId) setFocusedInvoiceId(invoiceId)
+    }
+    openRequestedInvoice()
+    const onFocus = () => openRequestedInvoice()
+    window.addEventListener("focus", onFocus)
+    return () => window.removeEventListener("focus", onFocus)
+  }, [])
 
   // Dynamically load attendance data from localStorage
   const getAttendanceData = () => {
@@ -125,7 +139,7 @@ export function AdminDashboard() {
         </TabsContent>
 
         <TabsContent value="fees" className="animate-in fade-in-0">
-          <FeeManager />
+          <FeeManager focusedInvoiceId={focusedInvoiceId} />
         </TabsContent>
 
         <TabsContent value="dashboard" className="space-y-6 animate-in fade-in-0">

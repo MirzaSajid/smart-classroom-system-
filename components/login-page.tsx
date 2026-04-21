@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -22,6 +22,25 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [showRoleCards, setShowRoleCards] = useState(false)
+  const [showLoginForm, setShowLoginForm] = useState(false)
+
+  useEffect(() => {
+    if (!selectedRole) {
+      const id = requestAnimationFrame(() => setShowRoleCards(true))
+      return () => cancelAnimationFrame(id)
+    }
+    setShowRoleCards(false)
+  }, [selectedRole])
+
+  useEffect(() => {
+    if (selectedRole) {
+      setShowLoginForm(false)
+      const id = requestAnimationFrame(() => setShowLoginForm(true))
+      return () => cancelAnimationFrame(id)
+    }
+    setShowLoginForm(false)
+  }, [selectedRole])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -108,11 +127,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <p className="text-center text-sm text-muted-foreground">Administrator Access</p>
 
             <Card
-              className="cursor-pointer transition-all hover:border-primary hover:shadow-lg group"
+              style={{ transitionDelay: "20ms" }}
+              className={`group cursor-pointer border-border/70 transition-all duration-250 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:border-primary/70 hover:shadow-xl ${
+                showRoleCards ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+              }`}
               onClick={() => setSelectedRole("admin")}
             >
               <CardContent className="flex items-center gap-4 p-6">
-                <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-hover:bg-primary/20">
                   <Shield className="h-7 w-7 text-primary" />
                 </div>
                 <div className="flex-1">
@@ -135,41 +157,46 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           {/* Teacher Login Link */}
           <div className="space-y-4">
             <p className="text-center text-sm text-muted-foreground">Are you faculty?</p>
-            <Button
+
+            <Card
               onClick={() => setSelectedRole("teacher")}
-              variant="outline"
-              className="w-full h-auto py-4 px-4 bg-primary/5 hover:bg-primary/10"
+              style={{ transitionDelay: "80ms" }}
+              className={`group cursor-pointer border-primary/20 bg-primary/5 transition-all duration-250 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:border-primary/60 hover:bg-primary/10 hover:shadow-xl ${
+                showRoleCards ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+              }`}
             >
-              <div className="flex items-center gap-3 w-full">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Users className="h-5 w-5 text-primary" />
+              <CardContent className="flex items-center gap-4 p-6">
+                <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-hover:bg-primary/20">
+                  <Users className="h-7 w-7 text-primary" />
                 </div>
-                <div className="text-left flex-1">
-                  <p className="font-semibold text-foreground">Teacher Login</p>
-                  <p className="text-xs text-muted-foreground">Access teacher portal</p>
+                <div className="flex-1 text-left">
+                  <h3 className="font-semibold text-lg text-foreground">Teacher Login</h3>
+                  <p className="text-sm text-muted-foreground">Access teacher portal and attendance tools</p>
                 </div>
-              </div>
-            </Button>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Student Login Link */}
           <div className="space-y-4">
             <p className="text-center text-sm text-muted-foreground">Are you a student?</p>
-            <Button
+            <Card
               onClick={() => setSelectedRole("student")}
-              variant="outline"
-              className="w-full h-auto py-4 px-4 bg-accent/5 hover:bg-accent/10"
+              style={{ transitionDelay: "140ms" }}
+              className={`group cursor-pointer border-accent/20 bg-accent/5 transition-all duration-250 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:border-accent/60 hover:bg-accent/10 hover:shadow-xl ${
+                showRoleCards ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+              }`}
             >
-              <div className="flex items-center gap-3 w-full">
-                <div className="h-10 w-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                  <GraduationCap className="h-5 w-5 text-accent" />
+              <CardContent className="flex items-center gap-4 p-6">
+                <div className="h-14 w-14 rounded-xl bg-accent/10 flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-hover:bg-accent/20">
+                  <GraduationCap className="h-7 w-7 text-accent" />
                 </div>
-                <div className="text-left flex-1">
-                  <p className="font-semibold text-foreground">Student Login</p>
-                  <p className="text-xs text-muted-foreground">Access your portal</p>
+                <div className="flex-1 text-left">
+                  <h3 className="font-semibold text-lg text-foreground">Student Login</h3>
+                  <p className="text-sm text-muted-foreground">Access your portal, classes, and attendance</p>
                 </div>
-              </div>
-            </Button>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Footer */}
@@ -182,7 +209,11 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   // Login form screen
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <div className="w-full max-w-md space-y-6">
+      <div
+        className={`w-full max-w-md space-y-6 transition-all duration-300 ease-out ${
+          showLoginForm ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+        }`}
+      >
         {/* Header */}
         <div className="text-center space-y-2">
           <div className="flex justify-center">

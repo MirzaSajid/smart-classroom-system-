@@ -108,7 +108,7 @@ export function Navigation({
                     "w-full justify-start gap-3 rounded-xl transition-all " +
                     (active
                       ? "shadow-sm"
-                      : "hover:bg-[var(--glass-bg-strong)] hover:backdrop-blur-xl hover:border hover:border-[var(--glass-border)]")
+                      : "hover:bg-[var(--glass-bg-strong)] hover:text-foreground hover:backdrop-blur-xl hover:border hover:border-[var(--glass-border)]")
                   }
                   onClick={() => {
                     if (signedInRole !== "admin" && role.id !== signedInRole) {
@@ -130,7 +130,7 @@ export function Navigation({
                 <Button
                   type="button"
                   variant={activeStudentSection === "academic" ? "default" : "ghost"}
-                  className="w-full justify-start gap-3 rounded-xl hover:bg-[var(--glass-bg-strong)] hover:backdrop-blur-xl hover:border hover:border-[var(--glass-border)]"
+                  className="w-full justify-start gap-3 rounded-xl hover:bg-[var(--glass-bg-strong)] hover:text-foreground hover:backdrop-blur-xl hover:border hover:border-[var(--glass-border)]"
                   onClick={() => {
                     onStudentSectionChange?.("academic")
                   }}
@@ -141,7 +141,7 @@ export function Navigation({
                 <Button
                   type="button"
                   variant={activeStudentSection === "fees" ? "default" : "ghost"}
-                  className="w-full justify-start gap-3 rounded-xl hover:bg-[var(--glass-bg-strong)] hover:backdrop-blur-xl hover:border hover:border-[var(--glass-border)]"
+                  className="w-full justify-start gap-3 rounded-xl hover:bg-[var(--glass-bg-strong)] hover:text-foreground hover:backdrop-blur-xl hover:border hover:border-[var(--glass-border)]"
                   onClick={() => {
                     onStudentSectionChange?.("fees")
                   }}
@@ -157,7 +157,7 @@ export function Navigation({
         <div className="pt-3">
           <Button
             variant="outline"
-            className="w-full justify-start gap-3 rounded-xl bg-[var(--glass-bg)] border-[var(--glass-border)] backdrop-blur-2xl hover:bg-[var(--glass-bg-strong)]"
+            className="w-full justify-start gap-3 rounded-xl bg-[var(--glass-bg)] border-[var(--glass-border)] backdrop-blur-2xl hover:bg-primary/10 hover:border-primary/30 hover:text-foreground transition-colors"
             onClick={onLogout}
           >
             <LogOut className="w-5 h-5" />

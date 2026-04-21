@@ -95,6 +95,7 @@ export function FaceRecognitionCamera({
   const [videoDims, setVideoDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
   const faceapiRef = useRef<null | typeof import("@vladmandic/face-api")>(null)
   const debugTickRef = useRef(0)
+  const matchStreakRef = useRef<Map<string, number>>(new Map())
 
   // Reset session-scoped UI state when a new session starts (class or active flag changes).
   useEffect(() => {
@@ -105,13 +106,17 @@ export function FaceRecognitionCamera({
     setTimeRemaining(autoMarkAfterMinutes * 60)
     setVideoReady(false)
     setVideoDims({ w: 0, h: 0 })
+    matchStreakRef.current = new Map()
   }, [classId, isActive, autoMarkAfterMinutes])
 
   // Face descriptors from face-api are compared by Euclidean distance (lower is better).
-  // Tuned a bit looser so genuine students are not rejected as unknown.
+  // Use stricter threshold for new matches and slightly looser one for already-known students
+  // to reduce known/unknown flicker on adjacent frames.
   const FACE_DISTANCE_THRESHOLD = 0.62
+  const FACE_TRACKING_DISTANCE_THRESHOLD = 0.66
   // Ambiguity guard: if top-2 matches are too close, treat as unknown.
   const FACE_AMBIGUITY_MARGIN = 0.02
+  const MATCH_CONFIRMATION_FRAMES = 2
   // Keep prop for backward compatibility (not used for match gating now).
   void confidenceThreshold
   const SCAN_INTERVAL_MS = typeof detectionIntervalMs === "number" ? detectionIntervalMs : 1800
@@ -340,6 +345,7 @@ export function FaceRecognitionCamera({
         const detections = await faceapi.detectAllFaces(img).withFaceLandmarks().withFaceDescriptors()
         setLastDetectionsCount(detections.length)
 
+        const alreadyMarkedIds = new Set(detectedStudents.map((s) => s.id))
         const overlay = overlayRef.current
         const container = containerRef.current
         if (overlay && container && video.videoWidth && video.videoHeight) {
@@ -367,9 +373,11 @@ export function FaceRecognitionCamera({
               candidates.sort((a, b) => a.distance - b.distance)
               const best = candidates[0] ?? null
               const second = candidates[1] ?? null
-              const withinDistance = Boolean(best && best.distance <= FACE_DISTANCE_THRESHOLD)
+              const strictDistanceOk = Boolean(best && best.distance <= FACE_DISTANCE_THRESHOLD)
+              const trackingDistanceOk = Boolean(best && best.distance <= FACE_TRACKING_DISTANCE_THRESHOLD)
               const clearlyBest = !second || second.distance - (best?.distance ?? 0) >= FACE_AMBIGUITY_MARGIN
-              const matched = Boolean(best && withinDistance && clearlyBest)
+              const stickyAlreadyMarked = Boolean(best && alreadyMarkedIds.has(best.studentId) && trackingDistanceOk)
+              const matched = Boolean(best && (stickyAlreadyMarked || (strictDistanceOk && clearlyBest)))
 
               const box = det.detection.box
               const mapped = mapBoxToDisplay(box, video.videoWidth, video.videoHeight, cw, ch)
@@ -390,6 +398,7 @@ export function FaceRecognitionCamera({
 
         const additions: DetectedStudent[] = []
         const seenThisFrame = new Set<string>()
+        const candidatesSeenThisFrame = new Set<string>()
         for (const det of detections) {
           if (!det.descriptor) continue
           const detected = Array.from(det.descriptor)
@@ -406,9 +415,12 @@ export function FaceRecognitionCamera({
           const second = candidates[1] ?? null
 
           if (!best) continue
-          const withinDistance = best.distance <= FACE_DISTANCE_THRESHOLD
+          const strictDistanceOk = best.distance <= FACE_DISTANCE_THRESHOLD
+          const trackingDistanceOk = best.distance <= FACE_TRACKING_DISTANCE_THRESHOLD
           const clearlyBest = !second || second.distance - best.distance >= FACE_AMBIGUITY_MARGIN
-          if (!withinDistance || !clearlyBest) continue
+          const stickyAlreadyMarked = alreadyMarkedIds.has(best.studentId) && trackingDistanceOk
+          if (!(stickyAlreadyMarked || (strictDistanceOk && clearlyBest))) continue
+          candidatesSeenThisFrame.add(best.studentId)
           if (seenThisFrame.has(best.studentId)) continue
           seenThisFrame.add(best.studentId)
 
@@ -417,12 +429,22 @@ export function FaceRecognitionCamera({
             console.log("[v0] Match:", best.studentName, "confidence:", best.confidence)
           }
 
+          const streak = (matchStreakRef.current.get(best.studentId) || 0) + 1
+          matchStreakRef.current.set(best.studentId, streak)
+          if (!alreadyMarkedIds.has(best.studentId) && streak < MATCH_CONFIRMATION_FRAMES) continue
+
           additions.push({
             id: best.studentId,
             name: best.studentName,
             confidence: best.confidence,
             timestamp: new Date(),
           })
+        }
+
+        for (const studentId of Array.from(matchStreakRef.current.keys())) {
+          if (!candidatesSeenThisFrame.has(studentId)) {
+            matchStreakRef.current.delete(studentId)
+          }
         }
 
         if (additions.length > 0) {

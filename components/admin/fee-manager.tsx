@@ -39,6 +39,8 @@ export type FeeInvoice = {
   balance: number
   payments: FeePayment[]
   paymentSubmissions: FeePaymentSubmission[]
+  category?: "tuition" | "disciplinary"
+  sourceIncidentId?: string
 }
 
 const LS_KEY = "feeInvoices"
@@ -104,6 +106,8 @@ function normalizeInvoice(raw: any): FeeInvoice | null {
     balance,
     payments,
     paymentSubmissions,
+    category: raw.category === "disciplinary" ? "disciplinary" : "tuition",
+    sourceIncidentId: typeof raw.sourceIncidentId === "string" ? raw.sourceIncidentId : undefined,
   }
 }
 
@@ -123,7 +127,7 @@ function saveInvoices(list: FeeInvoice[]) {
   localStorage.setItem(LS_KEY, JSON.stringify(list))
 }
 
-export function FeeManager() {
+export function FeeManager({ focusedInvoiceId = "" }: { focusedInvoiceId?: string }) {
   const [adminData, setAdminData] = useState<any>(null)
   const [invoices, setInvoices] = useState<FeeInvoice[]>([])
 
@@ -142,6 +146,15 @@ export function FeeManager() {
     }
     setInvoices(loadInvoices())
   }, [])
+
+  useEffect(() => {
+    if (!focusedInvoiceId) return
+    const t = window.setTimeout(() => {
+      const el = document.querySelector(`[data-invoice-id="${focusedInvoiceId}"]`) as HTMLElement | null
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" })
+    }, 120)
+    return () => window.clearTimeout(t)
+  }, [focusedInvoiceId, invoices.length])
 
   const students = useMemo(() => {
     const list = adminData?.students || []
@@ -402,7 +415,15 @@ export function FeeManager() {
         ) : (
           <div className="mt-3 space-y-2">
             {sorted.slice(0, 50).map((i) => (
-              <div key={i.id} className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4">
+              <div
+                key={i.id}
+                data-invoice-id={i.id}
+                className={`rounded-xl border bg-[var(--glass-bg)] p-4 ${
+                  focusedInvoiceId === i.id
+                    ? "border-destructive/50 ring-1 ring-destructive/40"
+                    : "border-[var(--glass-border)]"
+                }`}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -410,6 +431,11 @@ export function FeeManager() {
                       <Badge variant={i.status === "paid" ? "default" : "outline"} className="bg-transparent">
                         {i.status === "paid" ? "PAID" : i.status === "partial" ? "PARTIAL" : "UNPAID"}
                       </Badge>
+                      {i.category === "disciplinary" ? (
+                        <Badge variant="destructive" className="bg-destructive/15 text-destructive border-destructive/30">
+                          DISCIPLINARY
+                        </Badge>
+                      ) : null}
                     </div>
                     <p className="text-xs text-foreground/60 mt-1">
                       Student: <span className="text-foreground">{i.studentName}</span> ({i.studentId})
@@ -419,6 +445,9 @@ export function FeeManager() {
                       <span className="text-foreground font-medium">{i.amountPaid}</span> · Balance:{" "}
                       <span className="text-foreground font-medium">{i.balance}</span> · Due: {i.dueDate}
                     </p>
+                    {i.sourceIncidentId ? (
+                      <p className="text-[10px] text-foreground/50 mt-1">Linked incident: {i.sourceIncidentId}</p>
+                    ) : null}
                     {i.payments.length ? (
                       <p className="text-[10px] text-foreground/50 mt-1">
                         Last payment: {new Date(i.payments[i.payments.length - 1].paidAt).toLocaleString()}

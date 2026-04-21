@@ -20,6 +20,8 @@ type SecurityIncident = {
   time: string
   details: string
   status: string
+  fineInvoiceId?: string
+  invoiceCategory?: string
 }
 
 function normalizeSecurityIncident(raw: Record<string, unknown>): SecurityIncident {
@@ -38,6 +40,8 @@ function normalizeSecurityIncident(raw: Record<string, unknown>): SecurityIncide
     time,
     details: String(raw.details ?? raw.description ?? ""),
     status: String(raw.status ?? "Active"),
+    fineInvoiceId: typeof raw.fineInvoiceId === "string" ? raw.fineInvoiceId : undefined,
+    invoiceCategory: typeof raw.invoiceCategory === "string" ? raw.invoiceCategory : undefined,
   }
 }
 
@@ -112,6 +116,23 @@ export function SecurityDashboard() {
     setStatusFilter(nextStatus)
     setSeverityFilter(nextSeverity)
     setActiveTab("overview")
+  }
+
+  const clearAllIncidents = () => {
+    const ok = window.confirm("Clear all incidents? This will remove all stored security incidents.")
+    if (!ok) return
+    localStorage.removeItem("behaviorAlerts")
+    setBehaviorAlerts([])
+    setQuery("")
+    setStatusFilter("all")
+    setSeverityFilter("all")
+  }
+
+  const openChallan = (invoiceId?: string) => {
+    if (!invoiceId) return
+    localStorage.setItem("openFeeInvoiceId", invoiceId)
+    localStorage.setItem("openAdminTab", "fees")
+    window.alert(`Challan ${invoiceId} queued. Switch to Admin > Fees to open it.`)
   }
 
   return (
@@ -253,6 +274,15 @@ export function SecurityDashboard() {
                 >
                   Reset
                 </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="rounded-xl"
+                  onClick={clearAllIncidents}
+                  disabled={incidents.length === 0}
+                >
+                  Clear all incidents
+                </Button>
               </div>
             </div>
 
@@ -306,6 +336,21 @@ export function SecurityDashboard() {
                       </div>
                       {incident.details ? (
                         <p className="text-sm text-foreground/70 mt-3">{incident.details}</p>
+                      ) : null}
+                      {incident.fineInvoiceId ? (
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="bg-transparent">
+                            Challan: {incident.fineInvoiceId}
+                          </Badge>
+                          {incident.invoiceCategory ? (
+                            <Badge variant="outline" className="bg-transparent">
+                              {incident.invoiceCategory}
+                            </Badge>
+                          ) : null}
+                          <Button size="sm" variant="outline" onClick={() => openChallan(incident.fineInvoiceId)}>
+                            Open challan
+                          </Button>
+                        </div>
                       ) : null}
                       <div className="flex items-center gap-2 mt-3">
                         <span className="inline-block w-2 h-2 rounded-full bg-accent"></span>
